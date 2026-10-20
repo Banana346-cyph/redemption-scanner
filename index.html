@@ -130,6 +130,19 @@ textarea.q{font:500 .85rem var(--mono);resize:vertical;min-height:72px}
 .restore-preview p{margin:0}
 .shared p{margin:0}
 .install-tip{text-align:center}
+.live{border-color:var(--line-strong)}
+.live-off,.live-on,.live-invite{display:flex;flex-direction:column;gap:10px}
+.live-status{display:flex;align-items:center;gap:10px;font-weight:700}
+.dot{width:12px;height:12px;border-radius:50%;background:var(--faint);flex:0 0 auto}
+.dot.ok{background:#52e3a0;box-shadow:0 0 10px #52e3a0}
+.dot.wait{background:var(--gold);box-shadow:0 0 10px rgba(242,196,109,.7)}
+.dot.bad{background:var(--evil)}
+.qr{align-self:center;background:#fff;border-radius:10px;padding:10px;width:min(220px,70vw);box-shadow:var(--glow)}
+.qr svg{display:block;width:100%;height:auto}
+.ready-line{margin:0;font:400 1.05rem var(--display);min-height:1.3em}
+#liveReady[aria-pressed="true"]{background:linear-gradient(180deg,#7ef0bd,#3fcf8e);color:#062014;border-color:transparent;box-shadow:0 0 0 1px rgba(82,227,160,.6),0 6px 24px -6px rgba(82,227,160,.8)}
+.tiles .tile.locked{cursor:default}
+.tiles .tile.locked:hover{border-color:var(--line);box-shadow:none}
 .install-tip button{min-height:40px;padding:8px 14px;font-size:.9rem;margin-top:6px}
 .results .have{font:500 .75rem var(--mono);color:var(--muted)}
 html:not(.debug) .dbg{display:none!important}
@@ -302,12 +315,35 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
       <p id="sharedText"></p>
       <div class="row"><button type="button" class="primary" id="sharedLoad">Open this trade</button><button type="button" id="sharedDismiss">Not now</button></div>
     </section>
+    <section class="panel shared" id="liveJoin" hidden>
+      <h2 class="label">Live trade</h2>
+      <p>Someone invited you to a live trade. You'll each add your own cards, and both phones update as you go. This clears your current trade.</p>
+      <div class="row"><button type="button" class="primary" id="liveJoinBtn">Join live trade</button><button type="button" id="liveJoinNo">Not now</button></div>
+    </section>
+    <section class="panel live" id="livePanel">
+      <div class="live-off" id="liveOff">
+        <h2 class="label">Trade live</h2>
+        <p class="small">Connect two phones: each of you adds your own cards and they show up on both screens right away.</p>
+        <button type="button" class="primary" id="liveStart">Start a live trade</button>
+      </div>
+      <div class="live-on" id="liveOn" hidden>
+        <div class="live-status"><span class="dot" id="liveDot"></span><span id="liveStatus">Connecting…</span></div>
+        <div class="live-invite" id="liveInvite">
+          <p class="small">Have the other player scan this with their phone's camera, or send them the link.</p>
+          <div class="qr" id="liveQr" aria-label="QR code for the live trade link"></div>
+          <div class="row"><button type="button" id="liveShare">Send link</button><button type="button" id="liveCopy">Copy link</button></div>
+        </div>
+        <div class="row"><button type="button" id="liveReady">I'm ready to trade</button></div>
+        <p class="ready-line" id="liveReadyLine" role="status"></p>
+        <button type="button" class="gate-skip" id="liveLeave">Leave live trade</button>
+      </div>
+    </section>
     <section class="panel trade-sum" aria-live="polite">
       <h2 class="label">Trade value</h2>
       <div class="vs"><div><span class="small">You give</span><b id="vsMine">$0.00</b></div><span class="arrow" aria-hidden="true">⇄</span><div><span class="small">You get</span><b id="vsTheirs">$0.00</b></div></div>
       <p class="verdict" id="verdict">Add cards to both sides to compare.</p>
       <p class="small">Prices are Your Turn Games store prices from <span id="priceDate">the saved card list</span>.</p>
-      <div class="row"><button type="button" id="shareTrade">Share this trade</button></div>
+      <div class="row"><button type="button" id="shareTrade">Send as a link instead</button></div>
       <p class="small" id="shareMsg" role="status"></p>
     </section>
     <section class="panel side" aria-labelledby="h-mine">
@@ -336,10 +372,10 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
       </div>
     </section>
     <section class="panel side" aria-labelledby="h-theirs">
-      <div class="side-head"><div><h2 id="h-theirs">Their cards</h2><p class="small">What you get</p></div><div class="total" id="total-theirs">$0.00</div></div>
+      <div class="side-head"><div><h2 id="h-theirs">Their cards</h2><p class="small" id="theirsSub">What you get</p></div><div class="total" id="total-theirs">$0.00</div></div>
       <div class="sum-line" id="sum-theirs"></div>
       <div class="tiles" id="tiles-theirs"></div>
-      <div class="row add-row">
+      <div class="row add-row" id="theirsAdd">
         <button type="button" data-side="theirs" class="add-search">Add by name</button>
         <label class="btn file-btn"><input type="file" accept="image/*" capture="environment" data-side="theirs" class="add-photo">Add by photo</label>
       </div>
@@ -1236,20 +1272,22 @@ function priceSummary(c){
 }
 const TRADE_KEY="rcs.trade.v1",SIDES=["mine","theirs"];
 let trade=(()=>{const t=lsGet(TRADE_KEY,null);return t&&Array.isArray(t.mine)&&Array.isArray(t.theirs)?t:{mine:[],theirs:[]}})();
-function saveTrade(){lsSet(TRADE_KEY,trade)}
+function saveTrade(sync=true){lsSet(TRADE_KEY,trade);if(sync&&live){if(live.ready)live.ready=false;queuePublish();setLiveStatus()}}
 function livePrice(x){const h=HANDLES.get(x.h);const v=h?h.c.p[h.i][2]:null;return v!=null?v:x.price}
 const sideTotal=k=>trade[k].reduce((a,x)=>a+(livePrice(x)||0),0);
 function renderTrade(){
   for(const k of SIDES){
     const tiles=$("tiles-"+k);tiles.innerHTML="";
-    if(!trade[k].length){const e=document.createElement("div");e.className="empty";e.textContent="No cards yet. Add by name or photo below.";tiles.appendChild(e)}
+    if(!trade[k].length){const e=document.createElement("div");e.className="empty";e.textContent=live&&k==="theirs"?"Their cards will show up here as they add them.":"No cards yet. Add by name or photo below.";tiles.appendChild(e)}
     trade[k].forEach((x,i)=>{const b=document.createElement("button");b.type="button";b.className="tile";b.setAttribute("aria-label",`Remove ${x.n}${x.set?" ("+x.set+")":""}, ${money(livePrice(x))}`);
       b.innerHTML='<span class="tt"><span class="tn"></span><span class="ts"></span><span class="tp"></span></span>';b.prepend(thumbEl(x.ti,44));
       b.querySelector(".tn").textContent=x.n;b.querySelector(".ts").textContent=x.set||"";b.querySelector(".tp").textContent=money(livePrice(x));
-      b.onclick=()=>{trade[k].splice(i,1);saveTrade();renderTrade()};tiles.appendChild(b)});
+      if(live&&k==="theirs"){b.classList.add("locked");b.setAttribute("aria-label",`${x.n}${x.set?" ("+x.set+")":""}, ${money(livePrice(x))}`);b.onclick=null}
+      else b.onclick=()=>{trade[k].splice(i,1);saveTrade();renderTrade()};
+      tiles.appendChild(b)});
     const tot=sideTotal(k);$("total-"+k).textContent=money(tot);
     const ps=trade[k].map(x=>{const v=livePrice(x);return v==null?"?":Number(v).toFixed(2)});
-    $("sum-"+k).textContent=ps.length>1?(ps.length>10?ps.slice(0,10).join(" + ")+" + …":ps.join(" + "))+" = "+money(tot):(ps.length?"Tap a card to remove it":"");
+    $("sum-"+k).textContent=ps.length>1?(ps.length>10?ps.slice(0,10).join(" + ")+" + …":ps.join(" + "))+" = "+money(tot):(ps.length?(live&&k==="theirs"?"":"Tap a card to remove it"):"");
   }
   const a=sideTotal("mine"),b=sideTotal("theirs"),d=b-a;
   $("vsMine").textContent=money(a);$("vsTheirs").textContent=money(b);
@@ -1260,7 +1298,7 @@ function renderTrade(){
 function setTab(name){
   for(const [v,t,n] of [["scanView","tabScan","scan"],["tradeView","tabTrade","trade"],["collView","tabColl","collection"]]){
     $(v).hidden=name!==n;$(t).setAttribute("aria-selected",String(name===n))}
-  try{if(!/^#t=/.test(location.hash))history.replaceState(null,"",name==="scan"?"#":"#"+name)}catch(e){}
+  try{if(!/^#(t|live)=/.test(location.hash))history.replaceState(null,"",name==="scan"?"#":"#"+name)}catch(e){}
   if(name==="collection")renderColl();
 }
 function closeAdder(k){$("adder-"+k).hidden=true;$("confirm-"+k).hidden=true;$("results-"+k).innerHTML="";$("adderStatus-"+k).textContent=""}
@@ -1436,6 +1474,87 @@ function applyRestore(mode){
   $("backupMsg").textContent=mode==="replace"?"Collection restored.":"Backup added to your collection.";
   pendingRestore=null;$("restorePreview").hidden=true;$("restoreBox").hidden=true;$("restoreText").value="";
 }
+/* ---------- live trade: two phones, each owns its own side; cards travel through ntfy.sh (a free public relay) ---------- */
+const RELAY="https://ntfy.sh/";
+const DEVICE=(()=>{let d=lsGet("rcs.device",null);if(!d){d=Math.random().toString(36).slice(2,10);lsSet("rcs.device",d)}return d})();
+const LIVE_KEY="rcs.live";
+let live=null,pubTimer=null,qrLib=null;
+function newRoom(){const a=new Uint8Array(14);crypto.getRandomValues(a);return "rut-"+[...a].map(b=>(b%36).toString(36)).join("")}
+function liveLink(room){return location.origin+location.pathname+"#live="+room}
+function liveMsg(kind){return JSON.stringify({v:1,from:DEVICE,kind,mine:trade.mine.slice(0,120).map(x=>x.h),ready:!!(live&&live.ready),ts:Date.now()})}
+function publish(kind){if(!live)return;fetch(RELAY+live.room,{method:"POST",body:liveMsg(kind)}).catch(()=>{live&&(live.sendFailed=true,setLiveStatus())})}
+function queuePublish(){if(!live)return;clearTimeout(pubTimer);pubTimer=setTimeout(()=>publish("state"),400)}
+function startLive(room){
+  stopLive(true);
+  live={room,peerSeen:0,peerTs:0,ready:false,theirReady:false,started:Date.now()};
+  lsSet(LIVE_KEY,{room,at:Date.now()});
+  const es=new EventSource(RELAY+room+"/sse?since=15m");live.es=es;
+  es.onopen=()=>{live&&(live.connected=true,live.sendFailed=false);publish("hello");setLiveStatus()};
+  es.onerror=()=>{if(live){live.connected=false;setLiveStatus()}};
+  es.onmessage=e=>{let m,d;try{m=JSON.parse(e.data);if(m.event&&m.event!=="message")return;d=JSON.parse(m.message)}catch(x){return}onLiveMsg(d)};
+  live.hb=setInterval(()=>{publish("ping");setLiveStatus()},25000);
+  renderLive();renderTrade();
+}
+function stopLive(silent){
+  if(!live)return;try{live.es.close()}catch(e){}clearInterval(live.hb);clearTimeout(pubTimer);live=null;lsSet(LIVE_KEY,null);
+  if(!silent){renderLive();renderTrade()}
+}
+function onLiveMsg(d){
+  if(!live||!d||d.v!==1||d.from===DEVICE)return;
+  if(live.peer&&d.from!==live.peer&&Date.now()-live.peerSeen<60000)return; // someone else on the link: stick with the first player
+  const fresh=d.ts>=live.peerTs;live.peer=d.from;live.peerSeen=Date.now();
+  if(fresh){
+    live.peerTs=d.ts;
+    const before=trade.theirs.map(x=>x.h).join("~"),list=(d.mine||[]).map(itemFromHandle).filter(Boolean);
+    if(list.map(x=>x.h).join("~")!==before){trade.theirs=list;if(live.ready){live.ready=false;queuePublish()}saveTrade(false);renderTrade()}
+    live.theirReady=!!d.ready;
+  }
+  if(d.kind==="hello")publish("state");
+  setLiveStatus();
+}
+function setLiveStatus(){
+  if(!live)return;
+  const dot=$("liveDot"),st=$("liveStatus"),gap=Date.now()-live.peerSeen;
+  let cls="wait",txt="Waiting for the other player to open the link…";
+  if(!live.connected){cls="bad";txt=live.started&&Date.now()-live.started<4000?"Connecting…":"Reconnecting… check your internet connection."}
+  else if(live.peerSeen&&gap<70000){cls="ok";txt="Connected. Cards update on both phones."}
+  else if(live.peerSeen){cls="wait";txt="Haven't heard from the other phone in a bit. They may have closed the app."}
+  if(live.sendFailed){cls="bad";txt="Couldn't send your latest cards. Check your internet connection."}
+  dot.className="dot "+cls;st.textContent=txt;
+  $("liveInvite").hidden=!!(live.peerSeen&&gap<70000);
+  const me=live.ready,them=live.theirReady,b=$("liveReady");b.setAttribute("aria-pressed",String(me));b.textContent=me?"You're ready (tap to undo)":"I'm ready to trade";
+  $("liveReadyLine").textContent=me&&them?"Both ready. Make the trade!":them?"They're ready. Check the cards, then tap I'm ready.":me?"Waiting for them to say they're ready.":"";
+}
+async function drawQr(url){
+  const box=$("liveQr");box.innerHTML="";
+  try{
+    if(!window.qrcode)await new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js";s.onload=res;s.onerror=rej;document.head.appendChild(s)});
+    const q=qrcode(0,"M");q.addData(url);q.make();box.innerHTML=q.createSvgTag({cellSize:4,margin:0,scalable:true});box.hidden=false;
+  }catch(e){box.hidden=true}
+}
+function renderLive(){
+  const on=!!live;$("liveOff").hidden=on;$("liveOn").hidden=!on;
+  $("theirsAdd").hidden=on;$("adder-theirs").hidden=on||$("adder-theirs").hidden;
+  $("theirsSub").textContent=on?"Added on their phone":"What you get";
+  $("addTheirs").hidden=on;
+  $("shareTrade").hidden=on;
+  if(on){drawQr(liveLink(live.room));setLiveStatus()}
+}
+async function shareLive(){
+  if(!live)return;const url=liveLink(live.room);
+  try{if(navigator.share){await navigator.share({title:"RUT live trade",text:"Join my live Redemption trade",url});return}}catch(e){if(e&&e.name==="AbortError")return}
+  copyLive();
+}
+async function copyLive(){if(!live)return;const url=liveLink(live.room);
+  try{await copyText(url);$("liveReadyLine").textContent="Link copied. Send it to the other player."}catch(e){$("liveReadyLine").textContent=url}}
+function checkLiveLink(){
+  const m=location.hash.match(/^#live=(rut-[a-z0-9]{8,40})$/);if(!m||!CARDS)return;
+  if(live&&live.room===m[1]){setTab("trade");return}
+  $("liveJoin").hidden=false;setTab("trade");
+  const done=()=>{$("liveJoin").hidden=true;try{history.replaceState(null,"","#trade")}catch(e){}};
+  $("liveJoinBtn").onclick=()=>{trade={mine:[],theirs:[]};saveTrade();renderTrade();startLive(m[1]);done()};
+  $("liveJoinNo").onclick=done;
+}
 /* ---------- sharing a trade ---------- */
 function tradeLink(){
   const enc=a=>a.map(x=>x.h).filter(Boolean).join("~");
@@ -1498,10 +1617,10 @@ function gateSteps(){
 }
 function showGate(){
   const g=$("installGate");if(!g)return;
-  const shared=/^#t=/.test(location.hash),skipped=lsGet("rcs.skipInstall",false);
+  const shared=/^#(t|live)=/.test(location.hash),skipped=lsGet("rcs.skipInstall",false);
   if(isInstalled()||!document.querySelector('link[rel="manifest"]')||skipped&&!shared){g.hidden=true;document.body.classList.remove("gated");return}
   gateSteps();$("gateInstall").hidden=!installEvt;
-  $("gateSkip").textContent=shared?"Just look at the shared trade for now":IS_IOS||IS_ANDROID?"Use it in the browser instead":"Continue on this computer";
+  $("gateSkip").textContent=shared?(/^#live=/.test(location.hash)?"Join the live trade in the browser":"Just look at the shared trade for now"):IS_IOS||IS_ANDROID?"Use it in the browser instead":"Continue on this computer";
   g.hidden=false;document.body.classList.add("gated");
 }
 function hideGate(remember){if(remember)lsSet("rcs.skipInstall",true);$("installGate").hidden=true;document.body.classList.remove("gated")}
@@ -1542,7 +1661,11 @@ function showInstallTip(){
     catch(e){$("trainMsg").textContent="Copy was blocked here."}};
   $("askClaude").onclick=askClaude;
   $("tabScan").onclick=()=>setTab("scan");$("tabTrade").onclick=()=>setTab("trade");$("tabColl").onclick=()=>setTab("collection");
-  $("shareTrade").onclick=shareTrade;$("collFilter").oninput=renderColl;
+  $("shareTrade").onclick=shareTrade;
+  $("liveStart").onclick=()=>{trade.theirs=[];saveTrade(false);startLive(newRoom())};
+  $("liveShare").onclick=shareLive;$("liveCopy").onclick=copyLive;$("liveLeave").onclick=()=>stopLive();
+  $("liveReady").onclick=()=>{if(!live)return;live.ready=!live.ready;publish("state");setLiveStatus()};
+  setInterval(()=>live&&setLiveStatus(),10000);$("collFilter").oninput=renderColl;
   $("backupFile").onclick=saveBackupFile;$("backupCode").onclick=copyBackupCode;
   $("restoreOpen").onclick=()=>{$("restoreBox").hidden=!$("restoreBox").hidden};
   $("restoreRead").onclick=()=>previewRestore($("restoreText").value);
@@ -1559,11 +1682,12 @@ function showInstallTip(){
   }
   document.querySelectorAll(".add-search").forEach(b=>b.onclick=()=>openSearch(b.dataset.side));
   document.querySelectorAll(".add-photo").forEach(inp=>inp.onchange=e=>{const f=e.target.files&&e.target.files[0];if(f)addByPhoto(inp.dataset.side,f);e.target.value=""});
-  $("clearTrade").onclick=()=>{trade={mine:[],theirs:[]};saveTrade();renderTrade()};
+  $("clearTrade").onclick=()=>{trade=live?{mine:[],theirs:trade.theirs}:{mine:[],theirs:[]};saveTrade();renderTrade()};
   const addFromScan=k=>{if(!current||!current.match)return;setTab("trade");showConfirm(k,current.match,[],"",current.printing||0);$("adder-"+k).scrollIntoView({block:"center"})};
   $("addMine").onclick=()=>addFromScan("mine");$("addTheirs").onclick=()=>addFromScan("theirs");
+  $("livePanel").hidden=!document.querySelector('link[rel="manifest"]'); // live trade needs the installed/GitHub app
   showInstallTip();showGate();
-  $("gateSkip").onclick=()=>hideGate(!/^#t=/.test(location.hash));
+  $("gateSkip").onclick=()=>hideGate(!/^#(t|live)=/.test(location.hash));
   $("gateInstall").onclick=async()=>{if(!installEvt)return;installEvt.prompt();let ok=false;try{ok=(await installEvt.userChoice).outcome==="accepted"}catch(e){}installEvt=null;$("gateInstall").hidden=true;
     if(ok){$("gateDone").hidden=false;$("gateDone").textContent="Installed! Open RUT from your home screen."}};
   renderTrade();renderColl();if(location.hash==="#trade")setTab("trade");if(location.hash==="#collection")setTab("collection");
@@ -1573,8 +1697,10 @@ function showInstallTip(){
   BUILTIN=await buildBuiltins();rebuildRefs(BUILTIN);
   setStatus("");
   getWorker(); // start downloading the reader in the background
-  loadLexicon();loadCards().then(()=>{renderTrade();renderColl();checkSharedTrade()});
-  window.addEventListener("hashchange",checkSharedTrade);
+  loadLexicon();loadCards().then(()=>{renderTrade();renderColl();checkSharedTrade();
+    const saved=lsGet(LIVE_KEY,null);if(!/^#live=/.test(location.hash)&&saved&&saved.room&&Date.now()-saved.at<6*3600e3)startLive(saved.room); // pick a live trade back up after a reload
+    checkLiveLink()});
+  window.addEventListener("hashchange",()=>{checkSharedTrade();checkLiveLink()});
   window.__rcs={showMatch,matchCard,get CARDS(){return CARDS},scan,prepareCard,classify,nameBinary,canvasFrom,loadImage,features,get REFS(){return REFS},setRefs:r=>{REFS=r}};
 })();
 </script>
