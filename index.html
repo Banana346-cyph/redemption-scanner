@@ -95,6 +95,23 @@ select,input{color-scheme:dark}
 .small{font-size:.86rem;color:var(--muted);margin:0}
 @media (max-width:420px){.result{grid-template-columns:104px 1fr}}
 [hidden]{display:none!important}
+.trade-sum .vs b.plain{color:var(--ink)}
+.coll-list{display:flex;flex-direction:column;gap:6px}
+.coll-row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
+.coll-row .cn{font:700 .95rem/1.2 var(--body);word-break:break-word}
+.coll-row .cs{font-size:.76rem;color:var(--muted)}
+.coll-row .cp{font:500 .84rem var(--mono);color:var(--gold)}
+.qty{display:flex;align-items:center;gap:6px}
+.qty button{min-height:36px;min-width:36px;padding:0;font:700 1.1rem var(--mono)}
+.qty b{font:500 1rem var(--mono);min-width:1.6em;text-align:center}
+.coll-empty{color:var(--muted);font-size:.9rem;border:1.5px dashed var(--line);border-radius:8px;padding:18px;text-align:center}
+.shared{border-color:var(--accent);box-shadow:var(--glow-soft)}
+.restore{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:12px}
+textarea.q{font:500 .85rem var(--mono);resize:vertical;min-height:72px}
+.restore-preview{display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid var(--accent);border-radius:8px}
+.restore-preview p{margin:0}
+.shared p{margin:0}
+.results .have{font:500 .75rem var(--mono);color:var(--muted)}
 html:not(.debug) .dbg{display:none!important}
 .meta{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:8px 0 0;font-size:.88rem}
 .meta dt{color:var(--muted);font-weight:700;letter-spacing:.04em}
@@ -177,6 +194,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   <nav class="tabs" role="tablist" aria-label="Sections">
     <button type="button" role="tab" id="tabScan" aria-selected="true" aria-controls="scanView">Scan</button>
     <button type="button" role="tab" id="tabTrade" aria-selected="false" aria-controls="tradeView">Trade <span class="tab-count" id="tradeCount"></span></button>
+    <button type="button" role="tab" id="tabColl" aria-selected="false" aria-controls="collView">Collection <span class="tab-count" id="collCount"></span></button>
   </nav>
   <div id="scanView" class="view" role="tabpanel" aria-labelledby="tabScan">
 
@@ -222,7 +240,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     </div>
     <div class="result-actions">
       <div class="links" id="links"></div>
-      <div class="trade-add" id="tradeAdd" hidden><button type="button" id="addMine">+ Your side of trade</button><button type="button" id="addTheirs">+ Their side</button></div>
+      <div class="trade-add" id="tradeAdd" hidden><button type="button" id="addMine">+ Your side of trade</button><button type="button" id="addTheirs">+ Their side</button><button type="button" id="addColl">+ My collection</button></div>
       <div class="alts" id="others"></div>
       <button type="button" id="askClaude" hidden style="min-height:40px;padding:8px 12px;font-size:.92rem;width:fit-content">Read name with Claude</button>
     </div>
@@ -259,11 +277,18 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   </div>
 
   <div id="tradeView" class="view" role="tabpanel" aria-labelledby="tabTrade" hidden>
+    <section class="panel shared" id="sharedBanner" hidden>
+      <h2 class="label">Shared trade</h2>
+      <p id="sharedText"></p>
+      <div class="row"><button type="button" class="primary" id="sharedLoad">Open this trade</button><button type="button" id="sharedDismiss">Not now</button></div>
+    </section>
     <section class="panel trade-sum" aria-live="polite">
       <h2 class="label">Trade value</h2>
       <div class="vs"><div><span class="small">You give</span><b id="vsMine">$0.00</b></div><span class="arrow" aria-hidden="true">⇄</span><div><span class="small">You get</span><b id="vsTheirs">$0.00</b></div></div>
       <p class="verdict" id="verdict">Add cards to both sides to compare.</p>
       <p class="small">Prices are Your Turn Games store prices from <span id="priceDate">the saved card list</span>.</p>
+      <div class="row"><button type="button" id="shareTrade">Share this trade</button></div>
+      <p class="small" id="shareMsg" role="status"></p>
     </section>
     <section class="panel side" aria-labelledby="h-mine">
       <div class="side-head"><div><h2 id="h-mine">Your cards</h2><p class="small">What you give</p></div><div class="total" id="total-mine">$0.00</div></div>
@@ -272,6 +297,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
       <div class="row add-row">
         <button type="button" data-side="mine" class="add-search">Add by name</button>
         <label class="btn file-btn"><input type="file" accept="image/*" capture="environment" data-side="mine" class="add-photo">Add by photo</label>
+        <button type="button" data-side="mine" class="add-coll">From my collection</button>
       </div>
       <div class="adder" id="adder-mine" hidden>
         <div class="search-wrap" id="searchWrap-mine">
@@ -314,6 +340,59 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
       </div>
     </section>
     <div class="row"><button type="button" id="clearTrade">Clear trade</button></div>
+  </div>
+
+  <div id="collView" class="view" role="tabpanel" aria-labelledby="tabColl" hidden>
+    <section class="panel trade-sum">
+      <h2 class="label">My collection</h2>
+      <div class="vs"><div><span class="small">Cards</span><b id="collCards" class="plain">0</b></div><span></span><div><span class="small">Value</span><b id="collValue">$0.00</b></div></div>
+      <p class="small">Saved on this phone. Values use today's Your Turn Games prices.</p>
+    </section>
+    <section class="panel side" aria-labelledby="h-coll">
+      <div class="side-head"><div><h2 id="h-coll">Cards</h2><p class="small" id="collSub">Add cards by name, by photo, or from a scan.</p></div></div>
+      <div class="row add-row">
+        <button type="button" data-side="coll" class="add-search">Add by name</button>
+        <label class="btn file-btn"><input type="file" accept="image/*" capture="environment" data-side="coll" class="add-photo">Add by photo</label>
+      </div>
+      <div class="adder" id="adder-coll" hidden>
+        <div class="search-wrap" id="searchWrap-coll">
+          <label class="label" for="q-coll">Card name</label>
+          <input id="q-coll" type="search" autocomplete="off" placeholder="Start typing, e.g. Moses in Glory" class="q">
+          <div class="results" id="results-coll"></div>
+        </div>
+        <p class="status" id="adderStatus-coll" role="status"></p>
+        <div class="confirm" id="confirm-coll" hidden>
+          <div class="confirm-top"><div class="preview" id="preview-coll"></div><div class="confirm-name" id="confirmName-coll"></div></div>
+          <label class="label" for="print-coll">Printing</label>
+          <select id="print-coll"></select>
+          <div class="alts" id="confirmAlts-coll"></div>
+          <div class="row"><button type="button" class="primary" id="confirmAdd-coll">Add card</button><button type="button" id="confirmCancel-coll">Cancel</button></div>
+        </div>
+      </div>
+      <input id="collFilter" type="search" class="q" placeholder="Filter my cards" aria-label="Filter my cards" autocomplete="off">
+      <div class="coll-list" id="collList"></div>
+    </section>
+    <section class="panel" aria-labelledby="h-backup">
+      <h2 class="label" id="h-backup">Backup</h2>
+      <p class="small" id="backupInfo">Your collection lives only on this phone. Save a backup so you can get it back on a new phone or after clearing Safari.</p>
+      <div class="row">
+        <button type="button" id="backupFile">Save backup file</button>
+        <button type="button" id="backupCode">Copy backup code</button>
+      </div>
+      <button type="button" id="restoreOpen">Restore a backup</button>
+      <div class="restore" id="restoreBox" hidden>
+        <label class="btn file-btn"><input type="file" id="restoreFile" accept=".json,application/json,text/plain">Choose backup file</label>
+        <label class="label" for="restoreText">Or paste a backup code</label>
+        <textarea id="restoreText" class="q" rows="3" placeholder="RSC1:…" autocomplete="off" spellcheck="false"></textarea>
+        <button type="button" id="restoreRead">Read backup</button>
+        <div class="restore-preview" id="restorePreview" hidden>
+          <p id="restoreSummary"></p>
+          <div class="row"><button type="button" class="primary" id="restoreReplace">Replace my collection</button><button type="button" id="restoreMerge">Add to my collection</button></div>
+        </div>
+      </div>
+      <p class="small" id="backupMsg" role="status"></p>
+    </section>
+    <div class="row"><button type="button" id="clearColl">Clear collection</button></div>
   </div>
 </div>
 
@@ -638,12 +717,12 @@ function fixWord(w){
   return [c,best[0]];
 }
 /* Card list from Your Turn Games: snap the reading to a real card and link to it. */
-let CARDS=null;
+let CARDS=null,HANDLES=new Map();
 const YTG="https://www.yourturngames.biz";
 const TYPE_CODE={good_character:"H",evil_character:"EC",good_enhancement:"GE",evil_enhancement:"EE",good_dominant:"D",evil_dominant:"D",good_fortress:"F",evil_fortress:"F",site:"S",artifact:"A",curse:"CU",covenant:"CO",lost_soul:"LS"};
 const CODE_LABEL={H:"Hero",EC:"Evil Character",GE:"Good Enhancement",EE:"Evil Enhancement",F:"Fortress",D:"Dominant",S:"Site",LS:"Lost Soul",A:"Artifact",CU:"Curse",CO:"Covenant",CI:"City"};
 function normName(t){return (t||"").toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim()}
-function loadCards(){return fetch("cards.json").then(r=>r.json()).then(j=>{const a=Array.isArray(j)?j:j.cards;if(j.thumbs)THUMBS=j.thumbs;if(j.pricesFetched){const el=$("priceDate");if(el)el.textContent=new Date(j.pricesFetched).toLocaleDateString(undefined,{month:"long",day:"numeric",year:"numeric"})}CARDS=a.map(([n,t,p,b])=>({n,norm:normName(n),t:new Set(t?t.split("."):[]),p,b:b?b.split("|"):[],ref:parseRefs(n)[0]||null}))}).catch(e=>console.warn("card list",e))}
+function loadCards(){return fetch("cards.json").then(r=>r.json()).then(j=>{const a=Array.isArray(j)?j:j.cards;if(j.thumbs)THUMBS=j.thumbs;if(j.pricesFetched){const el=$("priceDate");if(el)el.textContent=new Date(j.pricesFetched).toLocaleDateString(undefined,{month:"long",day:"numeric",year:"numeric"})}CARDS=a.map(([n,t,p,b])=>({n,norm:normName(n),t:new Set(t?t.split("."):[]),p,b:b?b.split("|"):[],ref:parseRefs(n)[0]||null}));HANDLES=new Map();for(const c of CARDS)c.p.forEach((x,i)=>HANDLES.set(x[1],{c,i}))}).catch(e=>console.warn("card list",e))}
 function matchCard(readings,typeKey,typeSure){
   if(!CARDS)return [];
   const rs=[...new Set(readings.map(normName))].filter(r=>r.replace(/ /g,"").length>=3);
@@ -655,6 +734,61 @@ function matchCard(readings,typeKey,typeSure){
     if(best>0.55)continue;
     out.push({c,d:best,s:best-(code&&c.t.has(code)?(typeSure?0.08:0.04):0)});}
   return out.sort((a,b)=>a.s-b.s).slice(0,4);
+}
+/* ---------- ability-text backup: when the name is unclear, read the ability and match its words ---------- */
+let TEXTS=null,TEXTIDX=null;
+const STOP=new Set("the and you your may this card from for with that are any not one each all its their his her has have into onto when while if was were may can cannot".split(" "));
+function words(t){return (t||"").toLowerCase().replace(/[^a-z ]+/g," ").split(" ").filter(w=>w.length>=3&&!STOP.has(w))}
+async function loadTexts(){
+  if(TEXTIDX)return TEXTIDX;
+  const j=await fetch("texts.json").then(r=>r.json());const df=new Map(),docs=[];
+  for(const [name,list] of Object.entries(j))for(const t of list){const ws=[...new Set(words(t))];if(ws.length<3)continue;docs.push({name,ws});for(const w of ws)df.set(w,(df.get(w)||0)+1)}
+  const N=docs.length,idf=w=>Math.log(1+N/(1+(df.get(w)||0)));
+  for(const d of docs){d.norm=Math.sqrt(d.ws.reduce((a,w)=>a+idf(w)**2,0))||1}
+  TEXTIDX={docs,idf};return TEXTIDX;
+}
+async function readAbilityText(cardHi,w){
+  const R={x:30,y:430,w:440,h:175},S=1.25,c=document.createElement("canvas");c.width=R.w*2*S;c.height=R.h*2*S;
+  const g=ctx2d(c);g.imageSmoothingQuality="high";g.drawImage(cardHi,R.x*2,R.y*2,R.w*2,R.h*2,0,0,c.width,c.height);
+  const im=g.getImageData(0,0,c.width,c.height),d=im.data;
+  for(let i=0;i<d.length;i+=4){const l=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];d[i]=d[i+1]=d[i+2]=l}
+  g.putImageData(im,0,0);
+  try{
+    await w.setParameters({tessedit_pageseg_mode:"6",tessedit_char_whitelist:""});
+    const r=await withTimeout(w.recognize(c),20000,"Reading the ability");return r.data.text||"";
+  }finally{
+    await w.setParameters({tessedit_pageseg_mode:"7",tessedit_char_whitelist:"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 '-,.:()&!?"});
+  }
+}
+async function matchByAbility(text){
+  const ix=await loadTexts(),q=[...new Set(words(text))];if(q.length<4)return null;
+  const qn=Math.sqrt(q.reduce((a,w)=>a+ix.idf(w)**2,0))||1,qs=new Set(q),best=new Map();
+  for(const d of ix.docs){let dot=0;for(const w of d.ws)if(qs.has(w))dot+=ix.idf(w)**2;const sc=dot/(qn*d.norm);if(sc>(best.get(d.name)||0))best.set(d.name,sc)}
+  const byName=new Map(CARDS.map(c=>[c.n,c]));
+  const ranked=[...best.entries()].sort((a,b)=>b[1]-a[1]).slice(0,12).map(([n,sc])=>({card:byName.get(n),score:sc})).filter(x=>x.card);
+  return ranked.length?ranked:null;
+}
+function nameGap(c,readings){let b=9;for(const r of readings.map(normName)){if(r.length<3)continue;const L=Math.max(r.length,c.norm.length);const d=wdist(r,c.norm,L)/L;if(d<b)b=d}return b}
+async function maybeAbility(cardHi,readings,iconType,w,say){
+  if(!CARDS||!w)return null;
+  const ms=matchCard(readings,iconType,false);
+  if(ms[0]&&ms[0].d<=0.3)return null; // the name was clear enough
+  say("Name unclear: reading the ability text…");
+  try{
+    const ranked=await matchByAbility(await readAbilityText(cardHi,w));
+    return chooseAbility(ranked,readings);
+  }catch(e){console.warn("ability",e);return null}
+}
+function chooseAbility(ranked,readings){
+    if(!ranked)return null;
+    const s1=ranked[0].score,s2=ranked.find(x=>x.score<s1*0.999)?.score||0;
+    // cards whose ability fits about as well; let whatever we could read of the name break the tie
+    const close=ranked.filter(x=>x.score>=Math.max(0.3,0.8*s1)).map(x=>({...x,gap:nameGap(x.card,readings)}));
+    if(!close.length)return null;
+    close.sort((a,b)=>a.gap-b.gap||b.score-a.score);
+    const pick=close[0].gap<0.6?close[0]:ranked[0];
+    const sure=(pick.gap!==undefined&&pick.gap<=0.45)||(close.length===1&&s1>=0.45&&s1>=1.35*s2);
+    return sure?{card:pick.card,how:"ability text",sure:true}:null;
 }
 /* ---------- Lost Souls: no icon box and the same name, so match them by verse reference (then picture) ---------- */
 const ROMAN={i:"1",ii:"2",iii:"3"};
@@ -717,8 +851,8 @@ async function maybeLostSoul(cardHi,card,readings,iconType,w,say){
   const pic=await bestByPicture(LS,card);
   return pic?{card:pic.c,how:"picture",ref:refs[0]?refs[0].text:"",sure:pic.sure}:null;
 }
-function listTypeDisplay(c,iconType){
-  const t=c.t,has=k=>t.has(k);
+function listTypeDisplay(c,iconType,pi){
+  const pt=pi!=null&&c.p[pi]&&c.p[pi][5];const t=pt?new Set(pt.split(".")):c.t,has=k=>t.has(k);
   const align=(good,evil,plain)=>iconType===good?[TYPES[good].label,"good"]:iconType===evil?[TYPES[evil].label,"evil"]:[plain,"neutral"];
   if(has("LS"))return ["Lost Soul","neutral"];
   if(has("CU"))return ["Curse","evil"];
@@ -786,7 +920,9 @@ function renderCard(c,chosen,how){
     +(others.length?` <span class="oos" style="color:var(--muted)">· other printings ${money(Math.min(...others))}${Math.max(...others)!==Math.min(...others)?"–"+money(Math.max(...others)):""}</span>`:"");
   const meta=[];if(c.b&&c.b.length)meta.push(["Brigade",c.b.join(" / ")]);if(set)meta.push(["Set",set+(c.p.length>1?(how==="picture"?" (matched by picture)":" (best guess, check the card)"):"")]);
   $("cardMeta").innerHTML="";for(const [k,v] of meta){const dt=document.createElement("dt"),dd=document.createElement("dd");dt.textContent=k;dd.textContent=v;$("cardMeta").append(dt,dd)}
-  if(current){current.match=c;current.printing=chosen}
+  if(current){current.match=c;current.printing=chosen;
+    const res=current.res,[tl,ts]=listTypeDisplay(c,res&&res.type,chosen);
+    if(tl){const chip=$("typeOut");chip.textContent=tl;chip.className="type-chip "+ts}}
 }
 function showMatch(readings,rawShown,source,forced){
   const nameEl=$("nameOut"),links=$("links"),others=$("others");links.innerHTML="";others.innerHTML="";$("priceLine").innerHTML="";$("cardMeta").innerHTML="";$("tradeAdd").hidden=true;if(current)current.match=null;
@@ -795,7 +931,7 @@ function showMatch(readings,rawShown,source,forced){
   if(current&&current.boxBrig&&ms.length>1){const top3=current.boxBrig.slice(0,3).map(x=>x[0]);
     for(const m of ms)if(m.c.b.some(b=>top3.includes(b)))m.s-=0.02;ms.sort((a,b)=>a.s-b.s)}
   const top=ms[0],sure=top&&top.d<=0.3,maybe=top&&!sure&&top.d<=0.45;
-  $("nameDebug").textContent=(forced?`Lost Soul matched by ${forced.how}${forced.ref?" (read “"+forced.ref+"”)":""} · `:"")+`read as “${rawShown||""}”`+(top?` · match distance ${top.d.toFixed(2)}`:"")+(source?` · ${source}`:"")+(current&&current.boxBrig?` · box colour looks ${current.boxBrig[0][0]}`:"");
+  $("nameDebug").textContent=(forced?`Matched by ${forced.how}${forced.ref?" (read “"+forced.ref+"”)":""} · `:"")+`read as “${rawShown||""}”`+(top?` · match distance ${top.d.toFixed(2)}`:"")+(source?` · ${source}`:"")+(current&&current.boxBrig?` · box colour looks ${current.boxBrig[0][0]}`:"");
   if(top&&(sure||maybe)){
     nameEl.className="name";nameEl.textContent=top.c.n;
     $("nameConf").textContent=sure?"":"Best guess. Check the name, or tap a suggestion below.";
@@ -904,9 +1040,11 @@ async function scan(src,{from}={}){
     const best=pickName(cands);
     showBin(best.b);
     const readings=[best.fixedName,...cands.map(c=>c.name)];
-    const ls=await maybeLostSoul(cardHi,card,readings,res.type,w,t=>{if(id===scanId)setStatus(t)});
+    const say=t=>{if(id===scanId)setStatus(t)};
+    let forced=await maybeLostSoul(cardHi,card,readings,res.type,w,say);
+    if(!forced&&id===scanId)forced=await maybeAbility(cardHi,readings,res.type,w,say);
     if(id!==scanId)return;
-    showMatch(readings,best.fixedName,"",ls);
+    showMatch(readings,best.fixedName,"",forced);
     setStatus(best.conf<60&&claudeOk?"Not sure about the name? Tap Read name with Claude.":"");
   }catch(e){nameEl.textContent="Couldn't read the name";setStatus("Reading the name failed: "+e.message,true)}
 }
@@ -1061,17 +1199,18 @@ function priceSummary(c){
 const TRADE_KEY="rcs.trade.v1",SIDES=["mine","theirs"];
 let trade=(()=>{const t=lsGet(TRADE_KEY,null);return t&&Array.isArray(t.mine)&&Array.isArray(t.theirs)?t:{mine:[],theirs:[]}})();
 function saveTrade(){lsSet(TRADE_KEY,trade)}
-const sideTotal=k=>trade[k].reduce((a,x)=>a+(x.price||0),0);
+function livePrice(x){const h=HANDLES.get(x.h);const v=h?h.c.p[h.i][2]:null;return v!=null?v:x.price}
+const sideTotal=k=>trade[k].reduce((a,x)=>a+(livePrice(x)||0),0);
 function renderTrade(){
   for(const k of SIDES){
     const tiles=$("tiles-"+k);tiles.innerHTML="";
     if(!trade[k].length){const e=document.createElement("div");e.className="empty";e.textContent="No cards yet. Add by name or photo below.";tiles.appendChild(e)}
-    trade[k].forEach((x,i)=>{const b=document.createElement("button");b.type="button";b.className="tile";b.setAttribute("aria-label",`Remove ${x.n}${x.set?" ("+x.set+")":""}, ${money(x.price)}`);
+    trade[k].forEach((x,i)=>{const b=document.createElement("button");b.type="button";b.className="tile";b.setAttribute("aria-label",`Remove ${x.n}${x.set?" ("+x.set+")":""}, ${money(livePrice(x))}`);
       b.innerHTML='<span class="tt"><span class="tn"></span><span class="ts"></span><span class="tp"></span></span>';b.prepend(thumbEl(x.ti,44));
-      b.querySelector(".tn").textContent=x.n;b.querySelector(".ts").textContent=x.set||"";b.querySelector(".tp").textContent=money(x.price);
+      b.querySelector(".tn").textContent=x.n;b.querySelector(".ts").textContent=x.set||"";b.querySelector(".tp").textContent=money(livePrice(x));
       b.onclick=()=>{trade[k].splice(i,1);saveTrade();renderTrade()};tiles.appendChild(b)});
     const tot=sideTotal(k);$("total-"+k).textContent=money(tot);
-    const ps=trade[k].map(x=>x.price==null?"?":Number(x.price).toFixed(2));
+    const ps=trade[k].map(x=>{const v=livePrice(x);return v==null?"?":Number(v).toFixed(2)});
     $("sum-"+k).textContent=ps.length>1?(ps.length>10?ps.slice(0,10).join(" + ")+" + …":ps.join(" + "))+" = "+money(tot):(ps.length?"Tap a card to remove it":"");
   }
   const a=sideTotal("mine"),b=sideTotal("theirs"),d=b-a;
@@ -1081,14 +1220,15 @@ function renderTrade(){
   const n=trade.mine.length+trade.theirs.length;$("tradeCount").textContent=n?`(${n})`:"";
 }
 function setTab(name){
-  const trade_=name==="trade";$("scanView").hidden=trade_;$("tradeView").hidden=!trade_;
-  $("tabScan").setAttribute("aria-selected",String(!trade_));$("tabTrade").setAttribute("aria-selected",String(trade_));
-  try{history.replaceState(null,"",trade_?"#trade":"#")}catch(e){}
+  for(const [v,t,n] of [["scanView","tabScan","scan"],["tradeView","tabTrade","trade"],["collView","tabColl","collection"]]){
+    $(v).hidden=name!==n;$(t).setAttribute("aria-selected",String(name===n))}
+  try{if(!/^#t=/.test(location.hash))history.replaceState(null,"",name==="scan"?"#":"#"+name)}catch(e){}
+  if(name==="collection")renderColl();
 }
 function closeAdder(k){$("adder-"+k).hidden=true;$("confirm-"+k).hidden=true;$("results-"+k).innerHTML="";$("adderStatus-"+k).textContent=""}
 function openSearch(k){
   const ad=$("adder-"+k);ad.hidden=false;$("searchWrap-"+k).hidden=false;$("confirm-"+k).hidden=true;$("adderStatus-"+k).textContent=CARDS?"":"Card list is still loading…";
-  const q=$("q-"+k);q.value="";$("results-"+k).innerHTML="";q.focus();
+  const q=$("q-"+k);q.oninput=null;q.value="";$("results-"+k).innerHTML="";q.focus();
 }
 function searchCards(q){
   const n=normName(q);if(!CARDS||n.length<2)return [];
@@ -1108,6 +1248,8 @@ function showResults(k){
     const pr=document.createElement("span");const ps=c.p.map(x=>x[2]).filter(v=>v!=null);
     pr.textContent=(c.p.length>1?c.p.length+" printings · ":"")+(ps.length?money(Math.min(...ps))+(ps.length>1&&Math.max(...ps)!==Math.min(...ps)?"+":""):"");
     const txt=document.createElement("span");txt.className="rtxt";txt.append(nm);
+    const have=coll.filter(x=>HANDLES.get(x.h)&&HANDLES.get(x.h).c===c).reduce((a,x)=>a+x.qty,0);
+    if(have){const hv=document.createElement("div");hv.className="have";hv.textContent=`You have ${have}`;txt.append(hv)}
     b.append(thumbEl(c.p[0][4],40),txt,pr);b.onclick=()=>showConfirm(k,c,[]);box.appendChild(b)}
 }
 function showConfirm(k,c,alts,note,chosen){
@@ -1121,8 +1263,9 @@ function showConfirm(k,c,alts,note,chosen){
   const altBox=$("confirmAlts-"+k);altBox.innerHTML="";
   if(alts&&alts.length){altBox.append("Not it? ");alts.forEach((m,i)=>{const b=document.createElement("button");b.type="button";b.className="pick";b.textContent=m.n;
     b.onclick=()=>showConfirm(k,m,alts.filter(x=>x!==m).concat([c]),note);altBox.append(b);if(i<alts.length-1)altBox.append(", ")})}
-  $("confirmAdd-"+k).onclick=()=>{const [set,h,price,,ti]=c.p[+sel.value]||[];trade[k].push({n:c.n,set:set||"",h:h||"",price:price==null?null:price,ti:ti==null?null:ti});
-    saveTrade();renderTrade();closeAdder(k);};
+  $("confirmAdd-"+k).onclick=()=>{const [set,h,price,,ti]=c.p[+sel.value]||[];const item={n:c.n,set:set||"",h:h||"",price:price==null?null:price,ti:ti==null?null:ti};
+    if(k==="coll"){addToColl(item);closeAdder(k);return}
+    trade[k].push(item);saveTrade();renderTrade();closeAdder(k);};
   $("confirmCancel-"+k).onclick=()=>closeAdder(k);
   $("confirmAdd-"+k).focus();
 }
@@ -1135,6 +1278,8 @@ async function identifyCard(src,say){ // photo -> best matches, for the trade sc
   const best=pickName(cands),readings=[best.fixedName,...cands.map(c=>c.name)];
   const ls=await maybeLostSoul(cardHi,card,readings,res.type,w,say);
   if(ls)return {matches:[{c:ls.card,d:ls.sure?0:0.4,s:0}],raw:best.fixedName,card};
+  const ab=await maybeAbility(cardHi,readings,res.type,w,say);
+  if(ab)return {matches:[{c:ab.card,d:0,s:0}],raw:best.fixedName,card};
   return {matches:matchCard(readings,res.type,res.margin>0.45),raw:best.fixedName,card};
 }
 async function addByPhoto(k,file){
@@ -1147,6 +1292,125 @@ async function addByPhoto(k,file){
     const pp=await pickPrinting(top.c,r.card);
     showConfirm(k,top.c,r.matches.slice(1).filter(m=>m.d<=0.5).map(m=>m.c),top.d<=0.3?"":"Best guess. Check it before adding.",pp.idx);
   }catch(e){say("Couldn't read that photo: "+e.message)}
+}
+/* ---------- my collection ---------- */
+const COLL_KEY="rcs.collection.v1";
+let coll=(()=>{const c=lsGet(COLL_KEY,null);return Array.isArray(c)?c:[]})();
+function saveColl(){lsSet(COLL_KEY,coll)}
+function addToColl(item,qty=1){const e=coll.find(x=>x.h===item.h);if(e)e.qty+=qty;else coll.push({...item,qty});saveColl();renderColl();
+  $("collSub").textContent=`Added ${item.n}${item.set?" ("+item.set+")":""}.`}
+function renderColl(){
+  const list=$("collList");list.innerHTML="";
+  const f=normName($("collFilter").value),items=coll.slice().sort((a,b)=>a.n.localeCompare(b.n)).filter(x=>!f||normName(x.n).includes(f));
+  if(!coll.length){const e=document.createElement("div");e.className="coll-empty";e.textContent="No cards yet. Scan a card and tap + My collection, or add one by name.";list.appendChild(e)}
+  for(const x of items){
+    const row=document.createElement("div");row.className="coll-row";
+    const info=document.createElement("div");info.style.minWidth="0";
+    const nm=document.createElement("div");nm.className="cn";nm.textContent=x.n;
+    const st=document.createElement("div");st.className="cs";st.textContent=x.set||"";
+    const pr=document.createElement("div");pr.className="cp";const v=livePrice(x);pr.textContent=v==null?"No price":x.qty>1?`${money(v)} each · ${money(v*x.qty)}`:money(v);
+    info.append(nm,st,pr);
+    const q=document.createElement("div");q.className="qty";
+    const minus=document.createElement("button");minus.type="button";minus.textContent="−";minus.setAttribute("aria-label",`One fewer ${x.n}`);
+    const num=document.createElement("b");num.textContent=x.qty;
+    const plus=document.createElement("button");plus.type="button";plus.textContent="+";plus.setAttribute("aria-label",`One more ${x.n}`);
+    minus.onclick=()=>{x.qty--;if(x.qty<=0)coll.splice(coll.indexOf(x),1);saveColl();renderColl()};
+    plus.onclick=()=>{x.qty++;saveColl();renderColl()};
+    q.append(minus,num,plus);row.append(thumbEl(x.ti,40),info,q);list.appendChild(row)}
+  const n=coll.reduce((a,x)=>a+x.qty,0),val=coll.reduce((a,x)=>a+(livePrice(x)||0)*x.qty,0);
+  $("collCards").textContent=n;$("collValue").textContent=money(val);$("collCount").textContent=n?`(${n})`:"";
+  if(typeof showBackupInfo==="function")showBackupInfo();
+}
+function openCollPicker(k){
+  const ad=$("adder-"+k);ad.hidden=false;$("searchWrap-"+k).hidden=false;$("confirm-"+k).hidden=true;
+  const q=$("q-"+k);q.value="";const box=$("results-"+k);box.innerHTML="";
+  if(!coll.length){$("adderStatus-"+k).textContent="Your collection is empty. Add cards in the Collection tab.";$("searchWrap-"+k).hidden=true;return}
+  $("adderStatus-"+k).textContent="Tap a card from your collection to add it.";
+  const draw=()=>{box.innerHTML="";const f=normName(q.value);
+    for(const x of coll.slice().sort((a,b)=>a.n.localeCompare(b.n)).filter(x=>!f||normName(x.n).includes(f))){
+      const used=trade[k].filter(t=>t.h===x.h).length,left=x.qty-used;
+      const b=document.createElement("button");b.type="button";b.disabled=left<=0;
+      const txt=document.createElement("span");txt.className="rtxt";const nm=document.createElement("b");nm.textContent=x.n;txt.append(nm);
+      const hv=document.createElement("div");hv.className="have";hv.textContent=`${x.set||""} · ${left} left`;txt.append(hv);
+      const pr=document.createElement("span");pr.textContent=money(livePrice(x));
+      b.append(thumbEl(x.ti,40),txt,pr);b.onclick=()=>{trade[k].push({n:x.n,set:x.set,h:x.h,price:x.price,ti:x.ti});saveTrade();renderTrade();draw()};box.appendChild(b)}};
+  q.oninput=draw;draw();
+}
+/* ---------- collection backup & restore (no accounts: a file or a code you keep) ---------- */
+const BK_KEY="rcs.lastBackup";
+function b64e(str){return btoa(unescape(encodeURIComponent(str))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}
+function b64d(s){s=s.replace(/-/g,"+").replace(/_/g,"/");while(s.length%4)s+="=";return decodeURIComponent(escape(atob(s)))}
+function backupData(){return {app:"redemption-scanner",v:1,saved:new Date().toISOString(),cards:coll.map(x=>[x.h,x.qty,x.n,x.set||""])}}
+function markBackedUp(){const d=new Date().toISOString();lsSet(BK_KEY,d);showBackupInfo()}
+function showBackupInfo(){const d=lsGet(BK_KEY,null),n=coll.reduce((a,x)=>a+x.qty,0);
+  $("backupInfo").textContent=(d?`Last backup: ${new Date(d).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}. `:"No backup yet. ")+
+    "Your collection lives only on this phone"+(n?` (${n} card${n===1?"":"s"})`:"")+". Save a backup so you can get it back on a new phone or after clearing Safari."}
+async function saveBackupFile(){
+  const msg=$("backupMsg");if(!coll.length){msg.textContent="Your collection is empty, so there's nothing to back up yet.";return}
+  const name=`redemption-collection-${new Date().toISOString().slice(0,10)}.json`,text=JSON.stringify(backupData(),null,1);
+  const file=new File([text],name,{type:"application/json"});
+  try{ // phones: share sheet lets you "Save to Files", email it, etc.
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:"Redemption collection backup"});markBackedUp();msg.textContent="Backup saved.";return}
+  }catch(e){if(e&&e.name==="AbortError")return}
+  try{const a=document.createElement("a");a.href=URL.createObjectURL(file);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    markBackedUp();msg.textContent=`Saved ${name}. Keep it somewhere safe, like Files or iCloud Drive.`}
+  catch(e){msg.textContent="This browser couldn't save a file. Use Copy backup code instead."}
+}
+async function copyBackupCode(){
+  const msg=$("backupMsg");if(!coll.length){msg.textContent="Your collection is empty, so there's nothing to back up yet.";return}
+  const code="RSC1:"+b64e(JSON.stringify(backupData()));
+  try{await navigator.clipboard.writeText(code);markBackedUp();msg.textContent="Backup code copied. Paste it into Notes or send it to yourself."}
+  catch(e){$("restoreBox").hidden=false;$("restoreText").value=code;$("restoreText").select();msg.textContent="Copy the code shown in the box above and keep it somewhere safe."}
+}
+let pendingRestore=null;
+function parseBackup(text){
+  text=(text||"").trim();let obj;
+  if(text.startsWith("RSC1:"))obj=JSON.parse(b64d(text.slice(5)));else obj=JSON.parse(text);
+  if(!obj||obj.app!=="redemption-scanner"||!Array.isArray(obj.cards))throw new Error("That isn't a Redemption Scanner backup.");
+  const items=[];
+  for(const [h,qty,n,set] of obj.cards){const q=Math.max(1,Math.floor(+qty||1));const it=itemFromHandle(h)||(n?{n,set:set||"",h,price:null,ti:null}:null);if(it)items.push({...it,qty:q})}
+  return {items,saved:obj.saved};
+}
+function previewRestore(text){
+  const msg=$("backupMsg");
+  try{pendingRestore=parseBackup(text)}catch(e){pendingRestore=null;$("restorePreview").hidden=true;msg.textContent=e.message&&e.message.includes("Redemption")?e.message:"Couldn't read that backup. Check that the whole code or file was used.";return}
+  const n=pendingRestore.items.reduce((a,x)=>a+x.qty,0),val=pendingRestore.items.reduce((a,x)=>a+(livePrice(x)||0)*x.qty,0);
+  $("restoreSummary").textContent=`Backup from ${pendingRestore.saved?new Date(pendingRestore.saved).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}):"an unknown date"}: ${n} card${n===1?"":"s"} worth ${money(val)} today.`;
+  $("restoreBox").hidden=false;$("restorePreview").hidden=false;msg.textContent="";
+}
+function applyRestore(mode){
+  if(!pendingRestore)return;
+  if(mode==="replace")coll=[];
+  for(const it of pendingRestore.items){const e=coll.find(x=>x.h===it.h);if(e)e.qty+=it.qty;else coll.push({...it})}
+  saveColl();renderColl();showBackupInfo();
+  $("backupMsg").textContent=mode==="replace"?"Collection restored.":"Backup added to your collection.";
+  pendingRestore=null;$("restorePreview").hidden=true;$("restoreBox").hidden=true;$("restoreText").value="";
+}
+/* ---------- sharing a trade ---------- */
+function tradeLink(){
+  const enc=a=>a.map(x=>x.h).filter(Boolean).join("~");
+  return location.origin+location.pathname+"#t="+enc(trade.mine)+"!"+enc(trade.theirs);
+}
+async function shareTrade(){
+  const msg=$("shareMsg");
+  if(!trade.mine.length&&!trade.theirs.length){msg.textContent="Add some cards first.";return}
+  const url=tradeLink(),text=`Trade: I give ${money(sideTotal("mine"))}, you give ${money(sideTotal("theirs"))}`;
+  try{if(navigator.share){await navigator.share({title:"Redemption trade",text,url});msg.textContent="Shared.";return}}catch(e){if(e&&e.name==="AbortError")return}
+  try{await navigator.clipboard.writeText(url);msg.textContent="Link copied. Paste it in a message to the other player."}
+  catch(e){msg.textContent="Copy this link: "+url}
+}
+function itemFromHandle(h){const r=HANDLES.get(h);if(!r)return null;const [set,,price,,ti]=r.c.p[r.i];return {n:r.c.n,set:set||"",h,price,ti}}
+function checkSharedTrade(){
+  const m=location.hash.match(/^#t=([a-z0-9~\-]*)!([a-z0-9~\-]*)$/i);if(!m||!CARDS)return;
+  const dec=s=>s?s.split("~").map(itemFromHandle).filter(Boolean):[];
+  // their "I give" is your "you get": swap sides
+  const give=dec(m[2]),get=dec(m[1]);if(!give.length&&!get.length)return;
+  const tot=a=>a.reduce((s,x)=>s+(livePrice(x)||0),0);
+  $("sharedText").textContent=`Someone sent you a trade: you'd give ${give.length} card${give.length===1?"":"s"} (${money(tot(give))}) and get ${get.length} card${get.length===1?"":"s"} (${money(tot(get))}). Opening it replaces your current trade.`;
+  $("sharedBanner").hidden=false;setTab("trade");
+  const clear=()=>{$("sharedBanner").hidden=true;try{history.replaceState(null,"","#trade")}catch(e){}};
+  $("sharedLoad").onclick=()=>{trade={mine:give,theirs:get};saveTrade();renderTrade();clear()};
+  $("sharedDismiss").onclick=clear;
 }
 /* ---------- boot ---------- */
 (async function(){
@@ -1168,9 +1432,20 @@ async function addByPhoto(k,file){
     try{await navigator.clipboard.writeText(txt);$("trainMsg").textContent="Copied. Paste it to Claude to make these permanent."}
     catch(e){$("trainMsg").textContent="Copy was blocked here."}};
   $("askClaude").onclick=askClaude;
-  $("tabScan").onclick=()=>setTab("scan");$("tabTrade").onclick=()=>setTab("trade");
-  for(const k of SIDES){
-    $("q-"+k).addEventListener("input",()=>showResults(k));
+  $("tabScan").onclick=()=>setTab("scan");$("tabTrade").onclick=()=>setTab("trade");$("tabColl").onclick=()=>setTab("collection");
+  $("shareTrade").onclick=shareTrade;$("collFilter").oninput=renderColl;
+  $("backupFile").onclick=saveBackupFile;$("backupCode").onclick=copyBackupCode;
+  $("restoreOpen").onclick=()=>{$("restoreBox").hidden=!$("restoreBox").hidden};
+  $("restoreRead").onclick=()=>previewRestore($("restoreText").value);
+  $("restoreFile").onchange=async e=>{const f=e.target.files&&e.target.files[0];if(f)previewRestore(await f.text());e.target.value=""};
+  $("restoreReplace").onclick=()=>applyRestore("replace");$("restoreMerge").onclick=()=>applyRestore("merge");
+  document.querySelectorAll(".add-coll").forEach(b=>b.onclick=()=>openCollPicker(b.dataset.side));
+  {let armed=false;$("clearColl").onclick=()=>{if(!coll.length)return;if(!armed){armed=true;$("clearColl").textContent="Tap again to delete all";setTimeout(()=>{armed=false;$("clearColl").textContent="Clear collection"},4000);return}
+    coll=[];saveColl();renderColl();armed=false;$("clearColl").textContent="Clear collection"}}
+  $("addColl").onclick=()=>{if(!current||!current.match)return;const c=current.match,[set,h,price,,ti]=c.p[current.printing||0];addToColl({n:c.n,set:set||"",h,price,ti});
+    setStatus(`Added ${c.n} to your collection.`)};
+  for(const k of [...SIDES,"coll"]){
+    $("q-"+k).addEventListener("input",()=>{if(!$("q-"+k).oninput)showResults(k)});
     $("q-"+k).addEventListener("keydown",e=>{if(e.key==="Escape")closeAdder(k)});
   }
   document.querySelectorAll(".add-search").forEach(b=>b.onclick=()=>openSearch(b.dataset.side));
@@ -1178,14 +1453,15 @@ async function addByPhoto(k,file){
   $("clearTrade").onclick=()=>{trade={mine:[],theirs:[]};saveTrade();renderTrade()};
   const addFromScan=k=>{if(!current||!current.match)return;setTab("trade");showConfirm(k,current.match,[],"",current.printing||0);$("adder-"+k).scrollIntoView({block:"center"})};
   $("addMine").onclick=()=>addFromScan("mine");$("addTheirs").onclick=()=>addFromScan("theirs");
-  renderTrade();if(location.hash==="#trade")setTab("trade");
+  renderTrade();renderColl();if(location.hash==="#trade")setTab("trade");if(location.hash==="#collection")setTab("collection");
   const setDebug=()=>{let on=location.hash==="#debug";try{if(on)localStorage.setItem("rcs.debug","1");if(location.hash==="#nodebug")localStorage.removeItem("rcs.debug");on=on||localStorage.getItem("rcs.debug")==="1"}catch(e){}document.documentElement.classList.toggle("debug",on)};
   setDebug();window.addEventListener("hashchange",setDebug);
   setStatus("Loading reference cards…");
   BUILTIN=await buildBuiltins();rebuildRefs(BUILTIN);
   setStatus("");
   getWorker(); // start downloading the reader in the background
-  loadLexicon();loadCards();
+  loadLexicon();loadCards().then(()=>{renderTrade();renderColl();checkSharedTrade()});
+  window.addEventListener("hashchange",checkSharedTrade);
   window.__rcs={showMatch,matchCard,get CARDS(){return CARDS},scan,prepareCard,classify,nameBinary,canvasFrom,loadImage,features,get REFS(){return REFS},setRefs:r=>{REFS=r}};
 })();
 </script>
