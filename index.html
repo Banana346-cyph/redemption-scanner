@@ -45,6 +45,9 @@ h2{font:400 1.2rem/1.2 var(--display);margin:0;letter-spacing:.02em}
 .label{font:700 .7rem/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 button,.btn{font:700 1rem var(--body);border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink);padding:12px 16px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;transition:box-shadow .15s,border-color .15s,background .15s}
 button:hover,.btn:hover{border-color:var(--accent)}
+button,.btn,a,.tile,label{-webkit-tap-highlight-color:transparent}
+button:active,.btn:active{border-color:var(--accent);background:var(--line)}
+button.primary:active,.btn.primary:active{filter:brightness(1.08)}
 button.primary,.btn.primary{background:linear-gradient(180deg,#c3a2ff,#9a6bff);color:var(--accent-ink);border-color:transparent;box-shadow:var(--glow)}
 button.primary:hover,.btn.primary:hover{box-shadow:0 0 0 1px rgba(200,170,255,.8),0 8px 34px -6px rgba(124,58,237,.95)}
 button:focus-visible,.btn:focus-within:has(input:focus-visible),select:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
@@ -111,6 +114,8 @@ textarea.q{font:500 .85rem var(--mono);resize:vertical;min-height:72px}
 .restore-preview{display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid var(--accent);border-radius:8px}
 .restore-preview p{margin:0}
 .shared p{margin:0}
+.install-tip{text-align:center}
+.install-tip button{min-height:40px;padding:8px 14px;font-size:.9rem;margin-top:6px}
 .results .have{font:500 .75rem var(--mono);color:var(--muted)}
 html:not(.debug) .dbg{display:none!important}
 .meta{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:8px 0 0;font-size:.88rem}
@@ -374,14 +379,14 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     </section>
     <section class="panel" aria-labelledby="h-backup">
       <h2 class="label" id="h-backup">Backup</h2>
-      <p class="small" id="backupInfo">Your collection lives only on this phone. Save a backup so you can get it back on a new phone or after clearing Safari.</p>
+      <p class="small" id="backupInfo">Your collection lives only on this phone. Save a backup so you can get it back on a new phone.</p>
       <div class="row">
         <button type="button" id="backupFile">Save backup file</button>
         <button type="button" id="backupCode">Copy backup code</button>
       </div>
       <button type="button" id="restoreOpen">Restore a backup</button>
       <div class="restore" id="restoreBox" hidden>
-        <label class="btn file-btn"><input type="file" id="restoreFile" accept=".json,application/json,text/plain">Choose backup file</label>
+        <label class="btn file-btn"><input type="file" id="restoreFile">Choose backup file</label>
         <label class="label" for="restoreText">Or paste a backup code</label>
         <textarea id="restoreText" class="q" rows="3" placeholder="RSC1:…" autocomplete="off" spellcheck="false"></textarea>
         <button type="button" id="restoreRead">Read backup</button>
@@ -394,6 +399,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     </section>
     <div class="row"><button type="button" id="clearColl">Clear collection</button></div>
   </div>
+  <p class="small install-tip" id="installTip" hidden></p>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
@@ -434,6 +440,10 @@ const NAME={x:130,y:6,w:358,h:47};
 /* ---------- small helpers ---------- */
 const $=id=>document.getElementById(id);
 function setStatus(t,err){const s=$("status");s.textContent=t||"";s.classList.toggle("err",!!err)}
+function copyText(t){ // clipboard can stall on some phones: give up after 2 s so a fallback shows instead
+  if(!navigator.clipboard||!navigator.clipboard.writeText)return Promise.reject(new Error("no clipboard"));
+  return Promise.race([navigator.clipboard.writeText(t),new Promise((_,rej)=>setTimeout(()=>rej(new Error("clipboard timeout")),2000))]);
+}
 function lsGet(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}
 function loadImage(src){return new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>rej(new Error("Could not open that image"));i.src=src})}
@@ -1336,6 +1346,14 @@ function openCollPicker(k){
       b.append(thumbEl(x.ti,40),txt,pr);b.onclick=()=>{trade[k].push({n:x.n,set:x.set,h:x.h,price:x.price,ti:x.ti});saveTrade();renderTrade();draw()};box.appendChild(b)}};
   q.oninput=draw;draw();
 }
+
+/* ---------- which phone? (only used to word tips: Safari/iCloud on iPhone, Chrome/Drive on Android) ---------- */
+const UA=navigator.userAgent||"";
+const IS_IOS=/iPhone|iPad|iPod/.test(UA)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+const IS_ANDROID=/Android/i.test(UA);
+const PLAT=IS_IOS?{browser:"Safari",clearData:"clearing Safari's website data",keep:"Files or iCloud Drive",saved:n=>`Saved ${n}. Keep it somewhere safe, like Files or iCloud Drive.`}
+  :IS_ANDROID?{browser:"Chrome",clearData:"clearing Chrome's site data",keep:"Google Drive",saved:n=>`Saved ${n} to your Downloads folder. For safekeeping, also put a copy in Google Drive or email it to yourself.`}
+  :{browser:"your browser",clearData:"clearing your browser's data",keep:"a safe folder",saved:n=>`Saved ${n} to your downloads folder. Keep a copy somewhere safe.`};
 /* ---------- collection backup & restore (no accounts: a file or a code you keep) ---------- */
 const BK_KEY="rcs.lastBackup";
 function b64e(str){return btoa(unescape(encodeURIComponent(str))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}
@@ -1344,22 +1362,26 @@ function backupData(){return {app:"redemption-scanner",v:1,saved:new Date().toIS
 function markBackedUp(){const d=new Date().toISOString();lsSet(BK_KEY,d);showBackupInfo()}
 function showBackupInfo(){const d=lsGet(BK_KEY,null),n=coll.reduce((a,x)=>a+x.qty,0);
   $("backupInfo").textContent=(d?`Last backup: ${new Date(d).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}. `:"No backup yet. ")+
-    "Your collection lives only on this phone"+(n?` (${n} card${n===1?"":"s"})`:"")+". Save a backup so you can get it back on a new phone or after clearing Safari."}
+    "Your collection lives only on this phone"+(n?` (${n} card${n===1?"":"s"})`:"")+`. Save a backup so you can get it back on a new phone or after ${PLAT.clearData}.`}
 async function saveBackupFile(){
   const msg=$("backupMsg");if(!coll.length){msg.textContent="Your collection is empty, so there's nothing to back up yet.";return}
   const name=`redemption-collection-${new Date().toISOString().slice(0,10)}.json`,text=JSON.stringify(backupData(),null,1);
-  const file=new File([text],name,{type:"application/json"});
-  try{ // phones: share sheet lets you "Save to Files", email it, etc.
-    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:"Redemption collection backup"});markBackedUp();msg.textContent="Backup saved.";return}
+  // phones: the share menu offers "Save to Files" (iPhone) or Drive, Gmail, etc. (Android).
+  // Android Chrome won't share .json as JSON, so offer the same file labelled as plain text there.
+  const asJson=new File([text],name,{type:"application/json"}),asText=new File([text],name,{type:"text/plain"});
+  try{
+    const file=navigator.canShare&&(navigator.canShare({files:[asJson]})?asJson:navigator.canShare({files:[asText]})?asText:null);
+    if(file){await navigator.share({files:[file],title:"Redemption collection backup"});markBackedUp();msg.textContent=`Backup shared. Make sure it ended up somewhere safe, like ${PLAT.keep}.`;return}
   }catch(e){if(e&&e.name==="AbortError")return}
+  const file=asJson;
   try{const a=document.createElement("a");a.href=URL.createObjectURL(file);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-    markBackedUp();msg.textContent=`Saved ${name}. Keep it somewhere safe, like Files or iCloud Drive.`}
+    markBackedUp();msg.textContent=PLAT.saved(name)}
   catch(e){msg.textContent="This browser couldn't save a file. Use Copy backup code instead."}
 }
 async function copyBackupCode(){
   const msg=$("backupMsg");if(!coll.length){msg.textContent="Your collection is empty, so there's nothing to back up yet.";return}
   const code="RSC1:"+b64e(JSON.stringify(backupData()));
-  try{await navigator.clipboard.writeText(code);markBackedUp();msg.textContent="Backup code copied. Paste it into Notes or send it to yourself."}
+  try{await copyText(code);markBackedUp();msg.textContent="Backup code copied. Paste it into a notes app or send it to yourself in a message."}
   catch(e){$("restoreBox").hidden=false;$("restoreText").value=code;$("restoreText").select();msg.textContent="Copy the code shown in the box above and keep it somewhere safe."}
 }
 let pendingRestore=null;
@@ -1396,7 +1418,7 @@ async function shareTrade(){
   if(!trade.mine.length&&!trade.theirs.length){msg.textContent="Add some cards first.";return}
   const url=tradeLink(),text=`Trade: I give ${money(sideTotal("mine"))}, you give ${money(sideTotal("theirs"))}`;
   try{if(navigator.share){await navigator.share({title:"Redemption trade",text,url});msg.textContent="Shared.";return}}catch(e){if(e&&e.name==="AbortError")return}
-  try{await navigator.clipboard.writeText(url);msg.textContent="Link copied. Paste it in a message to the other player."}
+  try{await copyText(url);msg.textContent="Link copied. Paste it in a message to the other player."}
   catch(e){msg.textContent="Copy this link: "+url}
 }
 function itemFromHandle(h){const r=HANDLES.get(h);if(!r)return null;const [set,,price,,ti]=r.c.p[r.i];return {n:r.c.n,set:set||"",h,price,ti}}
@@ -1411,6 +1433,21 @@ function checkSharedTrade(){
   const clear=()=>{$("sharedBanner").hidden=true;try{history.replaceState(null,"","#trade")}catch(e){}};
   $("sharedLoad").onclick=()=>{trade={mine:give,theirs:get};saveTrade();renderTrade();clear()};
   $("sharedDismiss").onclick=clear;
+}
+/* ---------- install tip (only on the real app, only when not installed yet) ---------- */
+let installEvt=null;
+window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();installEvt=e;showInstallTip()});
+function showInstallTip(){
+  const tip=$("installTip");if(!tip)return;
+  const standalone=window.matchMedia("(display-mode: standalone)").matches||navigator.standalone;
+  if(standalone||!document.querySelector('link[rel="manifest"]')){tip.hidden=true;return}
+  tip.innerHTML="";
+  if(installEvt){const b=document.createElement("button");b.type="button";b.textContent="Install the app";
+    b.onclick=async()=>{installEvt.prompt();try{await installEvt.userChoice}catch(e){}installEvt=null;tip.hidden=true};tip.append("Want it on your home screen? ",document.createElement("br"),b)}
+  else if(IS_IOS)tip.textContent="To install: open this page in Safari, tap the Share button, then Add to Home Screen.";
+  else if(IS_ANDROID)tip.textContent="To install: in Chrome, tap the ⋮ menu, then Add to Home screen or Install app.";
+  else{tip.hidden=true;return}
+  tip.hidden=false;
 }
 /* ---------- boot ---------- */
 (async function(){
@@ -1429,7 +1466,7 @@ function checkSharedTrade(){
   };
   $("clearTrain").onclick=()=>{lsSet(TKEY,[]);rebuildRefs(BUILTIN);$("trainMsg").textContent="Taught cards cleared."};
   $("copyTrain").onclick=async()=>{const txt=JSON.stringify(taught());
-    try{await navigator.clipboard.writeText(txt);$("trainMsg").textContent="Copied. Paste it to Claude to make these permanent."}
+    try{await copyText(txt);$("trainMsg").textContent="Copied. Paste it to Claude to make these permanent."}
     catch(e){$("trainMsg").textContent="Copy was blocked here."}};
   $("askClaude").onclick=askClaude;
   $("tabScan").onclick=()=>setTab("scan");$("tabTrade").onclick=()=>setTab("trade");$("tabColl").onclick=()=>setTab("collection");
@@ -1453,6 +1490,7 @@ function checkSharedTrade(){
   $("clearTrade").onclick=()=>{trade={mine:[],theirs:[]};saveTrade();renderTrade()};
   const addFromScan=k=>{if(!current||!current.match)return;setTab("trade");showConfirm(k,current.match,[],"",current.printing||0);$("adder-"+k).scrollIntoView({block:"center"})};
   $("addMine").onclick=()=>addFromScan("mine");$("addTheirs").onclick=()=>addFromScan("theirs");
+  showInstallTip();
   renderTrade();renderColl();if(location.hash==="#trade")setTab("trade");if(location.hash==="#collection")setTab("collection");
   const setDebug=()=>{let on=location.hash==="#debug";try{if(on)localStorage.setItem("rcs.debug","1");if(location.hash==="#nodebug")localStorage.removeItem("rcs.debug");on=on||localStorage.getItem("rcs.debug")==="1"}catch(e){}document.documentElement.classList.toggle("debug",on)};
   setDebug();window.addEventListener("hashchange",setDebug);
