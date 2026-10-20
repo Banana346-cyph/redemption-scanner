@@ -14,8 +14,6 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}*,*::before,*::after{box-sizing:border-box}body{margin:0}img{max-width:100%}</style>
 <title>RUT · Redemption Utility Tool</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Marcellus&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <style>
 /* Layout: one phone column. Scan / Trade switch at the top; the card result reads like a card slab.
    Look: deep purple night with a soft violet glow on the things you can press, gold for money. */
@@ -25,31 +23,31 @@
   --accent:#b48cff; --accent-deep:#7c3aed; --accent-ink:#13081f;
   --gold:#f2c46d; --good:#f2c46d; --good-bg:rgba(242,196,109,.12); --evil:#ff7d93; --evil-bg:rgba(255,125,147,.12);
   --site:#8ec5ff; --site-bg:rgba(142,197,255,.12); --warn:#ffb562;
-  --glow:0 0 0 1px rgba(180,140,255,.55),0 6px 28px -6px rgba(124,58,237,.75);
-  --glow-soft:0 0 0 1px rgba(180,140,255,.25),0 4px 22px -10px rgba(124,58,237,.6);
-  --display:"Marcellus",Georgia,"Times New Roman",serif;
-  --body:"Atkinson Hyperlegible",ui-sans-serif,system-ui,sans-serif;
-  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --glow:0 0 18px -4px rgba(157,107,255,.7);
+  --glow-soft:none;
+  --display:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   color-scheme:dark;
 }
 html,body{background:var(--bg);color:var(--ink)}
 body{font:16px/1.5 var(--body);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 56px;
-  background:radial-gradient(120% 60% at 50% -12%,var(--bg-glow),transparent 62%) no-repeat,var(--bg);min-height:100%}
+  background:linear-gradient(180deg,#1d1030,var(--bg) 320px) no-repeat,var(--bg);min-height:100%}
 .wrap{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
 header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-top:4px}
-h1{font:400 1.7rem/1.05 var(--display);margin:0;letter-spacing:.02em}
-h1 span{color:var(--accent);text-shadow:0 0 18px rgba(180,140,255,.55)}
-h2{font:400 1.2rem/1.2 var(--display);margin:0;letter-spacing:.02em}
+h1{font:900 1.9rem/1 var(--display);margin:0}
+h1 span{color:var(--accent)}
+h2{font:800 1.2rem/1.2 var(--display);margin:0;letter-spacing:.02em}
 .sub{color:var(--muted);margin:0;font-size:.85rem}
-.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
-.label{font:700 .7rem/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.label{font:700 .95rem/1.2 var(--body);color:var(--ink);margin:0}
 button,.btn{font:700 1rem var(--body);border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink);padding:12px 16px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;transition:box-shadow .15s,border-color .15s,background .15s}
 button:hover,.btn:hover{border-color:var(--accent)}
 button,.btn,a,.tile,label{-webkit-tap-highlight-color:transparent}
 button:active,.btn:active{border-color:var(--accent);background:var(--line)}
 button.primary:active,.btn.primary:active{filter:brightness(1.08)}
-button.primary,.btn.primary{background:linear-gradient(180deg,#c3a2ff,#9a6bff);color:var(--accent-ink);border-color:transparent;box-shadow:var(--glow)}
-button.primary:hover,.btn.primary:hover{box-shadow:0 0 0 1px rgba(200,170,255,.8),0 8px 34px -6px rgba(124,58,237,.95)}
+button.primary,.btn.primary{background:#9d6bff;color:#fff;border-color:#9d6bff;box-shadow:var(--glow)}
+button.primary:hover,.btn.primary:hover{background:#ad82ff}
 button:focus-visible,.btn:focus-within:has(input:focus-visible),select:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 button:disabled{opacity:.5;cursor:default}
 .row{display:flex;gap:10px;flex-wrap:wrap}
@@ -71,8 +69,8 @@ select,input{color-scheme:dark}
 /* result */
 .result{display:grid;grid-template-columns:128px 1fr;gap:16px;align-items:start}
 .result>*{min-width:0}
-.result canvas{width:100%;height:auto;border-radius:8px;display:block;box-shadow:var(--glow)}
-.name{font:400 1.65rem/1.1 var(--display);margin:4px 0 0;word-break:break-word;letter-spacing:.01em}
+.result canvas{width:100%;height:auto;border-radius:8px;display:block;border:2px solid var(--line-strong)}
+.name{font:800 1.65rem/1.1 var(--display);margin:4px 0 0;word-break:break-word;letter-spacing:.01em}
 .name.pending{color:var(--muted);font:400 1.1rem var(--body)}
 .type-chip{display:inline-flex;align-items:center;gap:8px;font:700 .85rem var(--body);padding:5px 10px;border-radius:6px;width:fit-content;letter-spacing:.02em}
 .type-chip.good{background:var(--good-bg);color:var(--good)}
@@ -87,7 +85,7 @@ select,input{color-scheme:dark}
 .links{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .links a{font:700 .9rem var(--body);text-decoration:none;border-radius:8px;padding:9px 12px;min-height:40px;display:inline-flex;align-items:center;border:1px solid var(--line-strong);color:var(--ink);background:var(--surface-2)}
 .links a:hover{border-color:var(--accent)}
-.links a.primary{background:linear-gradient(180deg,#c3a2ff,#9a6bff);border-color:transparent;color:var(--accent-ink);box-shadow:var(--glow)}
+.links a.primary{background:#9d6bff;border-color:#9d6bff;color:#fff}
 .pick{font:700 .88rem var(--body);background:none;border:0;padding:2px 0;min-height:0;color:var(--accent);text-decoration:underline;text-underline-offset:3px;cursor:pointer;box-shadow:none}
 .teach{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .teach select{font:1rem var(--body);padding:10px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink);min-height:48px;flex:1 1 200px}
@@ -98,15 +96,15 @@ select,input{color-scheme:dark}
 .small{font-size:.86rem;color:var(--muted);margin:0}
 @media (max-width:420px){.result{grid-template-columns:104px 1fr}}
 [hidden]{display:none!important}
-.gate{position:fixed;inset:0;z-index:50;background:radial-gradient(120% 70% at 50% -10%,rgba(124,58,237,.45),transparent 60%),var(--bg);display:flex;align-items:center;justify-content:center;overflow-y:auto;
+.gate{position:fixed;inset:0;z-index:50;background:linear-gradient(180deg,#22123a,var(--bg) 360px),var(--bg);display:flex;align-items:center;justify-content:center;overflow-y:auto;
   padding:max(20px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(20px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
 .gate-card{max-width:440px;width:100%;display:flex;flex-direction:column;gap:14px;align-items:stretch;text-align:left}
 .gate-icon{width:72px;height:72px;border-radius:16px;box-shadow:var(--glow);align-self:center}
-.gate h2{font:400 1.6rem/1.15 var(--display);margin:0;text-align:center;text-wrap:balance}
+.gate h2{font:800 1.6rem/1.15 var(--display);margin:0;text-align:center;text-wrap:balance}
 .gate-sub{margin:0;color:var(--muted);text-align:center}
 .gate-steps{margin:0;padding:0;list-style:none;counter-reset:st;display:flex;flex-direction:column;gap:10px}
 .gate-steps li{counter-increment:st;display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px}
-.gate-steps li::before{content:counter(st);width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:700 1rem var(--mono);color:var(--accent-ink);background:var(--accent);box-shadow:var(--glow-soft)}
+.gate-steps li::before{content:counter(st);width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:800 1rem var(--mono);color:#fff;background:#9d6bff}
 .gate-steps svg{width:22px;height:22px;vertical-align:-5px;color:var(--accent)}
 .gate-steps b{color:var(--ink)}
 .gate-done{margin:0;text-align:center;font-weight:700;color:var(--gold)}
@@ -137,9 +135,9 @@ textarea.q{font:500 .85rem var(--mono);resize:vertical;min-height:72px}
 .dot.ok{background:#52e3a0;box-shadow:0 0 10px #52e3a0}
 .dot.wait{background:var(--gold);box-shadow:0 0 10px rgba(242,196,109,.7)}
 .dot.bad{background:var(--evil)}
-.qr{align-self:center;background:#fff;border-radius:10px;padding:10px;width:min(220px,70vw);box-shadow:var(--glow)}
+.qr{align-self:center;background:#fff;border-radius:10px;padding:10px;width:min(220px,70vw)}
 .qr svg{display:block;width:100%;height:auto}
-.ready-line{margin:0;font:400 1.05rem var(--display);min-height:1.3em}
+.ready-line{margin:0;font:800 1.05rem var(--display);min-height:1.3em}
 #liveReady[aria-pressed="true"]{background:linear-gradient(180deg,#7ef0bd,#3fcf8e);color:#062014;border-color:transparent;box-shadow:0 0 0 1px rgba(82,227,160,.6),0 6px 24px -6px rgba(82,227,160,.8)}
 .tiles .tile.locked{cursor:default}
 .tiles .tile.locked:hover{border-color:var(--line);box-shadow:none}
@@ -164,21 +162,21 @@ details.tools>summary{border:0}
 /* empty state */
 #resultPanel.empty .result,#resultPanel.empty details.more{display:none}
 #resultPanel:not(.empty) .empty-note{display:none}
-.empty-note{display:flex;flex-direction:column;align-items:center;gap:6px;padding:26px 16px;border-radius:8px;text-align:center;color:var(--muted);background:repeating-linear-gradient(-45deg,transparent 0 10px,rgba(180,140,255,.04) 10px 20px)}
-.empty-note b{font:400 1.25rem var(--display);color:var(--ink)}
-.empty-card{width:46px;height:64px;border-radius:5px;border:1.5px dashed var(--line-strong);margin-bottom:6px}
+.empty-note{display:flex;flex-direction:column;align-items:center;gap:6px;padding:26px 16px;border-radius:10px;text-align:center;color:var(--muted);border:2px dashed var(--line-strong)}
+.empty-note b{font:800 1.25rem var(--display);color:var(--ink)}
+.empty-card{display:none}
 /* tabs */
 .tabs{display:flex;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:4px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
-.tabs button{flex:1;min-height:44px;border:0;border-radius:7px;background:none;font:400 1.08rem var(--display);letter-spacing:.04em;color:var(--muted)}
-.tabs button[aria-selected="true"]{background:var(--surface-2);color:var(--ink);box-shadow:var(--glow)}
+.tabs button{flex:1;min-height:44px;border:0;border-radius:8px;background:none;font:700 1rem var(--display);color:var(--muted)}
+.tabs button[aria-selected="true"]{background:#9d6bff;color:#fff}
 .tab-count{font:500 .78rem var(--mono);color:var(--gold)}
 .view{display:flex;flex-direction:column;gap:18px}
 /* trade */
 .side-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .side-head .small{margin:2px 0 0}
 .total,.money{font-family:var(--mono);font-weight:500;color:var(--gold);font-variant-numeric:tabular-nums}
-.total{font-size:1.45rem;line-height:1;text-shadow:0 0 16px rgba(242,196,109,.35)}
+.total{font-size:1.45rem;line-height:1;font-weight:800}
 .sum-line{font:500 .8rem var(--mono);color:var(--faint);word-break:break-word;min-height:1.2em}
 .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
 .tiles .empty{grid-column:1/-1;color:var(--muted);font-size:.9rem;border:1.5px dashed var(--line);border-radius:8px;padding:18px;text-align:center}
@@ -187,7 +185,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .tile .tt{display:flex;flex-direction:column;gap:1px;min-width:0}
 .tile .tn{font:700 .92rem/1.2 var(--body);word-break:break-word}
 .tile .ts{font-size:.76rem;color:var(--muted)}
-.tile .tp{font:500 .86rem var(--mono);color:var(--gold);margin-top:3px}
+.tile .tp{font:700 .9rem var(--mono);color:var(--gold);margin-top:3px}
 .adder{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:12px}
 .q,.adder select{font:1rem var(--body);padding:12px;border-radius:8px;border:1px solid var(--line-strong);background:var(--bg);color:var(--ink);width:100%;min-height:48px}
 .q:focus{border-color:var(--accent);box-shadow:var(--glow-soft);outline:none}
@@ -199,14 +197,14 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .confirm{display:flex;flex-direction:column;gap:8px}
 .confirm-top{display:flex;gap:14px;align-items:center}
 .confirm-top .thumb{border-radius:6px;box-shadow:var(--glow)}
-.confirm-name{font:400 1.35rem/1.15 var(--display)}
-.trade-sum{background:linear-gradient(180deg,var(--surface-2),var(--surface));box-shadow:var(--glow-soft)}
+.confirm-name{font:800 1.35rem/1.15 var(--display)}
+.trade-sum{background:var(--surface)}
 .trade-sum .vs{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:end}
 .trade-sum .vs .arrow{color:var(--faint);font:500 1.2rem var(--mono);padding-bottom:4px}
 .trade-sum .vs>div:last-child{text-align:right}
-.trade-sum .vs b{display:block;font:500 1.8rem/1.1 var(--mono);color:var(--gold);font-variant-numeric:tabular-nums}
-.verdict{margin:0;font:400 1.1rem var(--display)}
-.price-line{font:500 1.05rem var(--mono);color:var(--gold);margin-top:6px}
+.trade-sum .vs b{display:block;font:800 1.8rem/1.1 var(--mono);color:var(--gold);font-variant-numeric:tabular-nums}
+.verdict{margin:0;font:800 1.1rem var(--display)}
+.price-line{font:800 1.15rem var(--mono);color:var(--gold);margin-top:6px}
 .price-line .oos{color:var(--warn);font:700 .8rem var(--body)}
 .result-actions{display:flex;flex-direction:column;gap:10px}
 #resultPanel.empty .result-actions{display:none}
@@ -222,7 +220,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 <div class="wrap">
   <header>
     <h1><span>RUT</span></h1>
-    <p class="sub">Redemption Utility Tool · scan, price, trade</p>
+    <p class="sub">Redemption Utility Tool</p>
   </header>
   <nav class="tabs" role="tablist" aria-label="Sections">
     <button type="button" role="tab" id="tabScan" aria-selected="true" aria-controls="scanView">Scan</button>
@@ -251,7 +249,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 
   <section class="panel empty" aria-labelledby="resH" id="resultPanel">
     <h2 class="label" id="resH">Result</h2>
-    <div class="empty-note" id="emptyNote"><span class="empty-card" aria-hidden="true"></span><b>No card scanned yet</b><span>Take a photo of a card to see its name, type and price.</span></div>
+    <div class="empty-note" id="emptyNote"><span class="empty-card" aria-hidden="true"></span><b>No card yet</b><span>Snap a pic of a card to see what it is and what it's worth.</span></div>
     <div class="result">
       <canvas id="cardView" width="250" height="350" aria-label="Straightened card"></canvas>
       <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
@@ -317,19 +315,19 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     </section>
     <section class="panel shared" id="liveJoin" hidden>
       <h2 class="label">Live trade</h2>
-      <p>Someone invited you to a live trade. You'll each add your own cards, and both phones update as you go. This clears your current trade.</p>
+      <p>Someone wants to trade live with you! You each add your own cards and they show up on both phones. (This clears your current trade.)</p>
       <div class="row"><button type="button" class="primary" id="liveJoinBtn">Join live trade</button><button type="button" id="liveJoinNo">Not now</button></div>
     </section>
     <section class="panel live" id="livePanel">
       <div class="live-off" id="liveOff">
         <h2 class="label">Trade live</h2>
-        <p class="small">Connect two phones: each of you adds your own cards and they show up on both screens right away.</p>
+        <p class="small">Trade with a friend on 2 phones. You each add your cards and they pop up on both screens.</p>
         <button type="button" class="primary" id="liveStart">Start a live trade</button>
       </div>
       <div class="live-on" id="liveOn" hidden>
         <div class="live-status"><span class="dot" id="liveDot"></span><span id="liveStatus">Connecting…</span></div>
         <div class="live-invite" id="liveInvite">
-          <p class="small">Have the other player scan this with their phone's camera, or send them the link.</p>
+          <p class="small">Have your friend scan this with their camera, or send them the link.</p>
           <div class="qr" id="liveQr" aria-label="QR code for the live trade link"></div>
           <div class="row"><button type="button" id="liveShare">Send link</button><button type="button" id="liveCopy">Copy link</button></div>
         </div>
@@ -341,8 +339,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     <section class="panel trade-sum" aria-live="polite">
       <h2 class="label">Trade value</h2>
       <div class="vs"><div><span class="small">You give</span><b id="vsMine">$0.00</b></div><span class="arrow" aria-hidden="true">⇄</span><div><span class="small">You get</span><b id="vsTheirs">$0.00</b></div></div>
-      <p class="verdict" id="verdict">Add cards to both sides to compare.</p>
-      <p class="small">Prices are Your Turn Games store prices from <span id="priceDate">the saved card list</span>.</p>
+      <p class="verdict" id="verdict">Add cards to both sides to see who wins the trade.</p>
+      <p class="small">Prices from Your Turn Games as of <span id="priceDate">the saved card list</span>.</p>
       <div class="row"><button type="button" id="shareTrade">Send as a link instead</button></div>
       <p class="small" id="shareMsg" role="status"></p>
     </section>
@@ -402,10 +400,10 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     <section class="panel trade-sum">
       <h2 class="label">My collection</h2>
       <div class="vs"><div><span class="small">Cards</span><b id="collCards" class="plain">0</b></div><span></span><div><span class="small">Value</span><b id="collValue">$0.00</b></div></div>
-      <p class="small">Saved on this phone. Values use today's Your Turn Games prices.</p>
+      <p class="small">Saved on this phone. Prices update every night.</p>
     </section>
     <section class="panel side" aria-labelledby="h-coll">
-      <div class="side-head"><div><h2 id="h-coll">Cards</h2><p class="small" id="collSub">Add cards by name, by photo, or from a scan.</p></div></div>
+      <div class="side-head"><div><h2 id="h-coll">Cards</h2><p class="small" id="collSub">Add cards by name, photo, or right after a scan.</p></div></div>
       <div class="row add-row">
         <button type="button" data-side="coll" class="add-search">Add by name</button>
         <label class="btn file-btn"><input type="file" accept="image/*" capture="environment" data-side="coll" class="add-photo">Add by photo</label>
@@ -430,7 +428,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     </section>
     <section class="panel" aria-labelledby="h-backup">
       <h2 class="label" id="h-backup">Backup</h2>
-      <p class="small" id="backupInfo">Your collection lives only on this phone. Save a backup so you can get it back on a new phone.</p>
+      <p class="small" id="backupInfo">Your collection is only saved on this phone, so back it up!</p>
       <div class="row">
         <button type="button" id="backupFile">Save backup file</button>
         <button type="button" id="backupCode">Copy backup code</button>
@@ -458,7 +456,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   <div class="gate-card">
     <img src="icon-192.png" alt="" class="gate-icon" width="72" height="72">
     <h2 id="gateTitle">Add RUT to your home screen</h2>
-    <p class="gate-sub">It opens full screen like a normal app, keeps working without signal, and the live camera works best there. It's free and takes about 10 seconds.</p>
+    <p class="gate-sub">It works like a real app, works without signal, and the camera works better. Takes like 10 seconds.</p>
     <ol class="gate-steps" id="gateSteps"></ol>
     <button type="button" class="primary big" id="gateInstall" hidden>Install the app</button>
     <p class="gate-done" id="gateDone" hidden></p>
@@ -1008,7 +1006,7 @@ function showMatch(readings,rawShown,source,forced){
   $("nameDebug").textContent=(forced?`Matched by ${forced.how}${forced.ref?" (read “"+forced.ref+"”)":""} · `:"")+`read as “${rawShown||""}”`+(top?` · match distance ${top.d.toFixed(2)}`:"")+(source?` · ${source}`:"")+(current&&current.boxBrig?` · box colour looks ${current.boxBrig[0][0]}`:"");
   if(top&&(sure||maybe)){
     nameEl.className="name";nameEl.textContent=top.c.n;
-    $("nameConf").textContent=sure?"":"Best guess. Check the name, or tap a suggestion below.";
+    $("nameConf").textContent=sure?"":"Not 100% sure on this one, double check it.";
     renderCard(top.c,0,"default");$("tradeAdd").hidden=false;
     const myScan=scanId,card=current&&current.card;
     pickPrinting(top.c,card).then(r=>{if(scanId===myScan&&current&&current.match===top.c)renderCard(top.c,r.idx,r.how)});
@@ -1018,7 +1016,7 @@ function showMatch(readings,rawShown,source,forced){
       $("typeConf").textContent=`From the card list · the icon looked like ${res?TYPES[res.type].label:"?"}`;}
   }else{
     nameEl.className=rawShown?"name":"name pending";nameEl.textContent=rawShown||"Couldn't read the name";
-    $("nameConf").textContent=CARDS?"Not found in the card list. Try another photo, or search by name.":"Card list didn't load.";
+    $("nameConf").textContent=CARDS?"Couldn't find this card. Try another pic or search the name.":"Card list didn't load.";
     if(rawShown){const a=document.createElement("a");a.href=`${YTG}/search?q=${encodeURIComponent(rawShown)}`;a.target="_blank";a.rel="noopener";a.textContent="Search Your Turn Games";links.appendChild(a)}
   }
   const alt=sure?[]:ms.filter(m=>m!==top||!maybe).slice(0,3);
@@ -1227,7 +1225,7 @@ async function camTick(){
     if(!q){steady=0;lastQuad=null;clearOverlay();camHint("Looking for a card…");return}
     steady=quadMove(q,lastQuad)<0.04?steady+1:0;lastQuad=q;
     drawQuad(q,small.width,small.height,steady>=2?"rgba(242,196,109,.95)":"rgba(180,140,255,.95)");
-    if(steady<STEADY_NEEDED){camHint(steady?"Hold steady…":"Card found. Hold steady…");return}
+    if(steady<STEADY_NEEDED){camHint(steady?"Hold still…":"Got it, hold still…");return}
     await autoScan();
   }finally{ticking=false}
 }
@@ -1238,7 +1236,7 @@ async function autoScan(){
   if(scanId!==myId||camState!=="reading")return; // cancelled or stopped
   const name=current&&current.match?current.match.n:"";const pr=current&&current.match?priceSummary(current.match).replace(/<[^>]+>/g,""):"";
   lastScanned=name;camState="waiting";goneCount=0;camButtons();
-  camHint(name?`Got it: ${name}${pr?" · "+pr:""}. Show the next card.`:"Couldn't read that one. Move it away and try again, or tap Scan now.");
+  camHint(name?`Got it: ${name}${pr?" · "+pr:""}. Show me the next one!`:"Couldn't read that one. Move it away and try again, or hit Scan now.");
 }
 function snapFrame(){ // manual "Scan now"
   const v=$("video");if(!v.videoWidth)return;
@@ -1278,7 +1276,7 @@ const sideTotal=k=>trade[k].reduce((a,x)=>a+(livePrice(x)||0),0);
 function renderTrade(){
   for(const k of SIDES){
     const tiles=$("tiles-"+k);tiles.innerHTML="";
-    if(!trade[k].length){const e=document.createElement("div");e.className="empty";e.textContent=live&&k==="theirs"?"Their cards will show up here as they add them.":"No cards yet. Add by name or photo below.";tiles.appendChild(e)}
+    if(!trade[k].length){const e=document.createElement("div");e.className="empty";e.textContent=live&&k==="theirs"?"Their cards show up here when they add them":"No cards yet";tiles.appendChild(e)}
     trade[k].forEach((x,i)=>{const b=document.createElement("button");b.type="button";b.className="tile";b.setAttribute("aria-label",`Remove ${x.n}${x.set?" ("+x.set+")":""}, ${money(livePrice(x))}`);
       b.innerHTML='<span class="tt"><span class="tn"></span><span class="ts"></span><span class="tp"></span></span>';b.prepend(thumbEl(x.ti,44));
       b.querySelector(".tn").textContent=x.n;b.querySelector(".ts").textContent=x.set||"";b.querySelector(".tp").textContent=money(livePrice(x));
@@ -1291,8 +1289,8 @@ function renderTrade(){
   }
   const a=sideTotal("mine"),b=sideTotal("theirs"),d=b-a;
   $("vsMine").textContent=money(a);$("vsTheirs").textContent=money(b);
-  $("verdict").textContent=!trade.mine.length&&!trade.theirs.length?"Add cards to both sides to compare."
-    :Math.abs(d)<0.005?"Even trade.":d>0?`You get ${money(d)} more in value.`:`You give ${money(-d)} more in value.`;
+  $("verdict").textContent=!trade.mine.length&&!trade.theirs.length?"Add cards to both sides to see who wins the trade."
+    :Math.abs(d)<0.005?"Even trade!":d>0?`You get ${money(d)} more in value.`:`You give ${money(-d)} more in value.`;
   const n=trade.mine.length+trade.theirs.length;$("tradeCount").textContent=n?`(${n})`:"";
 }
 function setTab(name){
@@ -1378,7 +1376,7 @@ function addToColl(item,qty=1){const e=coll.find(x=>x.h===item.h);if(e)e.qty+=qt
 function renderColl(){
   const list=$("collList");list.innerHTML="";
   const f=normName($("collFilter").value),items=coll.slice().sort((a,b)=>a.n.localeCompare(b.n)).filter(x=>!f||normName(x.n).includes(f));
-  if(!coll.length){const e=document.createElement("div");e.className="coll-empty";e.textContent="No cards yet. Scan a card and tap + My collection, or add one by name.";list.appendChild(e)}
+  if(!coll.length){const e=document.createElement("div");e.className="coll-empty";e.textContent="Nothing here yet. Scan a card and hit + My collection.";list.appendChild(e)}
   for(const x of items){
     const row=document.createElement("div");row.className="coll-row";
     const info=document.createElement("div");info.style.minWidth="0";
@@ -1447,7 +1445,7 @@ async function saveBackupFile(){
 async function copyBackupCode(){
   const msg=$("backupMsg");if(!coll.length){msg.textContent="Your collection is empty, so there's nothing to back up yet.";return}
   const code="RSC1:"+b64e(JSON.stringify(backupData()));
-  try{await copyText(code);markBackedUp();msg.textContent="Backup code copied. Paste it into a notes app or send it to yourself in a message."}
+  try{await copyText(code);markBackedUp();msg.textContent="Copied! Paste it in your notes or text it to yourself."}
   catch(e){$("restoreBox").hidden=false;$("restoreText").value=code;$("restoreText").select();msg.textContent="Copy the code shown in the box above and keep it somewhere safe."}
 }
 let pendingRestore=null;
@@ -1471,7 +1469,7 @@ function applyRestore(mode){
   if(mode==="replace")coll=[];
   for(const it of pendingRestore.items){const e=coll.find(x=>x.h===it.h);if(e)e.qty+=it.qty;else coll.push({...it})}
   saveColl();renderColl();showBackupInfo();
-  $("backupMsg").textContent=mode==="replace"?"Collection restored.":"Backup added to your collection.";
+  $("backupMsg").textContent=mode==="replace"?"Got your collection back!":"Backup added to your collection.";
   pendingRestore=null;$("restorePreview").hidden=true;$("restoreBox").hidden=true;$("restoreText").value="";
 }
 /* ---------- live trade: two phones, each owns its own side; cards travel through ntfy.sh (a free public relay) ---------- */
@@ -1515,15 +1513,15 @@ function onLiveMsg(d){
 function setLiveStatus(){
   if(!live)return;
   const dot=$("liveDot"),st=$("liveStatus"),gap=Date.now()-live.peerSeen;
-  let cls="wait",txt="Waiting for the other player to open the link…";
+  let cls="wait",txt="Waiting for your friend to join…";
   if(!live.connected){cls="bad";txt=live.started&&Date.now()-live.started<4000?"Connecting…":"Reconnecting… check your internet connection."}
-  else if(live.peerSeen&&gap<70000){cls="ok";txt="Connected. Cards update on both phones."}
+  else if(live.peerSeen&&gap<70000){cls="ok";txt="Connected!"}
   else if(live.peerSeen){cls="wait";txt="Haven't heard from the other phone in a bit. They may have closed the app."}
   if(live.sendFailed){cls="bad";txt="Couldn't send your latest cards. Check your internet connection."}
   dot.className="dot "+cls;st.textContent=txt;
   $("liveInvite").hidden=!!(live.peerSeen&&gap<70000);
   const me=live.ready,them=live.theirReady,b=$("liveReady");b.setAttribute("aria-pressed",String(me));b.textContent=me?"You're ready (tap to undo)":"I'm ready to trade";
-  $("liveReadyLine").textContent=me&&them?"Both ready. Make the trade!":them?"They're ready. Check the cards, then tap I'm ready.":me?"Waiting for them to say they're ready.":"";
+  $("liveReadyLine").textContent=me&&them?"You're both ready, trade time!":them?"They're ready! Check the cards and hit ready.":me?"Waiting on them…":"";
 }
 async function drawQr(url){
   const box=$("liveQr");box.innerHTML="";
@@ -1546,7 +1544,7 @@ async function shareLive(){
   copyLive();
 }
 async function copyLive(){if(!live)return;const url=liveLink(live.room);
-  try{await copyText(url);$("liveReadyLine").textContent="Link copied. Send it to the other player."}catch(e){$("liveReadyLine").textContent=url}}
+  try{await copyText(url);$("liveReadyLine").textContent="Link copied! Send it to your friend."}catch(e){$("liveReadyLine").textContent=url}}
 function checkLiveLink(){
   const m=location.hash.match(/^#live=(rut-[a-z0-9]{8,40})$/);if(!m||!CARDS)return;
   if(live&&live.room===m[1]){setTab("trade");return}
@@ -1565,7 +1563,7 @@ async function shareTrade(){
   if(!trade.mine.length&&!trade.theirs.length){msg.textContent="Add some cards first.";return}
   const url=tradeLink(),text=`Trade: I give ${money(sideTotal("mine"))}, you give ${money(sideTotal("theirs"))}`;
   try{if(navigator.share){await navigator.share({title:"RUT trade",text,url});msg.textContent="Shared.";return}}catch(e){if(e&&e.name==="AbortError")return}
-  try{await copyText(url);msg.textContent="Link copied. Paste it in a message to the other player."}
+  try{await copyText(url);msg.textContent="Link copied! Send it to your friend."}
   catch(e){msg.textContent="Copy this link: "+url}
 }
 function itemFromHandle(h){const r=HANDLES.get(h);if(!r)return null;const [set,,price,,ti]=r.c.p[r.i];return {n:r.c.n,set:set||"",h,price,ti}}
@@ -1603,11 +1601,11 @@ function gateSteps(){
     li("Tap <b>Add page to</b>, then <b>Home screen</b>.");
     li("Open <b>RUT</b> from your home screen.");
   }else if(IS_ANDROID&&firefox){
-    li(`Tap the <b>⋮ menu</b> ${DOTS_SVG}.`);
+    li(`Tap the <b>menu</b> ${DOTS_SVG}.`);
     li("Tap <b>Install</b> (or <b>Add to Home screen</b>).");
     li("Open <b>RUT</b> from your home screen.");
   }else if(IS_ANDROID){
-    li(`Tap the <b>⋮ menu</b> ${DOTS_SVG} at the top right of Chrome.`);
+    li(`Tap the <b>menu</b> ${DOTS_SVG} at the top right of Chrome.`);
     li("Tap <b>Install app</b> or <b>Add to Home screen</b>, then <b>Install</b>.");
     li("Open <b>RUT</b> from your home screen or app drawer.");
   }else{
