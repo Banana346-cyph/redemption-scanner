@@ -331,16 +331,25 @@ const TYPES = {
   good_fortress:{label:"Good Fortress",icon:"Building, light rainbow",side:"good"},
   evil_fortress:{label:"Evil Fortress",icon:"Building, dark rainbow",side:"evil"},
   site:{label:"Site",icon:"Pyramids",side:"neutral"},
+  artifact:{label:"Artifact",icon:"Chalice",side:"neutral"},
+  curse:{label:"Curse",icon:"Skull + chalice",side:"evil"},
+  covenant:{label:"Covenant",icon:"Bible + chalice",side:"good"},
+  lost_soul:{label:"Lost Soul",icon:"No icon box",side:"neutral"},
 };
 const SAMPLES = [
   ["good_character","sample-good_character.jpg"],["evil_character","sample-evil_character.jpg"],
   ["good_enhancement","sample-good_enhancement.jpg"],["evil_enhancement","sample-evil_enhancement.jpg"],
   ["good_dominant","sample-good_dominant.jpg"],["evil_dominant","sample-evil_dominant.jpg"],
   ["good_fortress","sample-fortress.jpg"],["evil_fortress","sample-evil_fortress.jpg"],["site","sample-site.jpg"],
+  ["evil_enhancement","sample-curse.jpg"],["artifact","sample-artifact.jpg"],["covenant","sample-covenant_combo.jpg"],
+  ["good_enhancement","sample-covenant.jpg"],["lost_soul","sample-lost_soul.jpg"],
 ];
+/* Which samples have the chalice (artifact) box in the top-right corner: Curses and Covenants. */
+const CHALICE_TR=new Set(["sample-curse.jpg","sample-covenant.jpg"]);
 /* Card layout, measured on a straightened card 500 x 700 (inner colored frame). */
 const CW=500, CH=700;
 const BOX={x:0,y:0,w:125,h:92};
+const TRBOX={x:375,y:0,w:125,h:92};
 const NAME={x:130,y:6,w:358,h:47};
 
 /* ---------- small helpers ---------- */
@@ -462,10 +471,10 @@ function warp(src,quad,W,H){
 
 /* ---------- 3. icon features ---------- */
 const FW=64,FH=48,CELL=8;
-function boxPixels(card,dx,dy,sc){ // card: 500x700 canvas
-  const c=document.createElement("canvas");c.width=FW;c.height=FH;const g=ctx2d(c);
-  const w=BOX.w*sc,h=BOX.h*sc;g.imageSmoothingQuality="high";
-  g.drawImage(card,BOX.x+dx+(BOX.w-w)/2,BOX.y+dy+(BOX.h-h)/2,w,h,0,0,FW,FH);
+function boxPixels(card,dx,dy,sc,box){ // card: 500x700 canvas
+  const B=box||BOX,c=document.createElement("canvas");c.width=FW;c.height=FH;const g=ctx2d(c);
+  const w=B.w*sc,h=B.h*sc;g.imageSmoothingQuality="high";
+  g.drawImage(card,B.x+dx+(B.w-w)/2,B.y+dy+(B.h-h)/2,w,h,0,0,FW,FH);
   return g.getImageData(0,0,FW,FH).data;
 }
 function hog(px){
@@ -498,6 +507,16 @@ const COLW=[0.9,1.2,0.8,0.8];
 function colDist(a,b){let s=0;for(let i=0;i<4;i++)s+=COLW[i]*Math.abs(a[i]-b[i]);return s}
 
 let REFS=[]; // {label, hog, col, src:'builtin'|'taught'}
+let TR_REFS=[]; // top-right corner: {chalice:bool, hog, col}
+function trFeatures(card){const px=boxPixels(card,0,0,1,TRBOX);return {hog:hog(px),col:colorFeats(px)}}
+function hasChalice(card){
+  if(!TR_REFS.some(r=>r.chalice))return false;
+  const vs=[];for(const dy of [-4,0,4])for(const dx of [-5,0,5])vs.push(hog(boxPixels(card,dx,dy,1,TRBOX)));
+  const col=colorFeats(boxPixels(card,0,0,1,TRBOX));let yes=1e9,no=1e9;
+  for(const r of TR_REFS){let b=1e9;for(const h of vs){const d=dist(h,r.hog);if(d<b)b=d}const t=b+colDist(col,r.col);
+    if(r.chalice)yes=Math.min(yes,t);else no=Math.min(no,t)}
+  return yes<no*0.85;
+}
 function classify(card){
   // try small shifts/scales of the box crop to absorb alignment error; keep best per reference
   const variants=[];
@@ -510,7 +529,10 @@ function classify(card){
   let [top,d1]=ranked[0];const d2=ranked[1]?ranked[1][1]:d1*2;
   // building icon: alignment comes from how light the rainbow is
   const margin=(d2-d1)/d2;
-  return {type:top,margin,ranked,col};
+  const chalice=hasChalice(card);
+  if(chalice&&top==="evil_enhancement")top="curse";
+  else if(chalice&&top==="good_enhancement")top="covenant";
+  return {type:top,margin,ranked,col,chalice};
 }
 
 /* ---------- 4. read the name ---------- */
@@ -618,10 +640,10 @@ function fixWord(w){
 /* Card list from Your Turn Games: snap the reading to a real card and link to it. */
 let CARDS=null;
 const YTG="https://www.yourturngames.biz";
-const TYPE_CODE={good_character:"H",evil_character:"EC",good_enhancement:"GE",evil_enhancement:"EE",good_dominant:"D",evil_dominant:"D",good_fortress:"F",evil_fortress:"F",site:"S"};
+const TYPE_CODE={good_character:"H",evil_character:"EC",good_enhancement:"GE",evil_enhancement:"EE",good_dominant:"D",evil_dominant:"D",good_fortress:"F",evil_fortress:"F",site:"S",artifact:"A",curse:"CU",covenant:"CO",lost_soul:"LS"};
 const CODE_LABEL={H:"Hero",EC:"Evil Character",GE:"Good Enhancement",EE:"Evil Enhancement",F:"Fortress",D:"Dominant",S:"Site",LS:"Lost Soul",A:"Artifact",CU:"Curse",CO:"Covenant",CI:"City"};
 function normName(t){return (t||"").toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim()}
-function loadCards(){return fetch("cards.json").then(r=>r.json()).then(j=>{const a=Array.isArray(j)?j:j.cards;if(j.thumbs)THUMBS=j.thumbs;if(j.pricesFetched){const el=$("priceDate");if(el)el.textContent=new Date(j.pricesFetched).toLocaleDateString(undefined,{month:"long",day:"numeric",year:"numeric"})}CARDS=a.map(([n,t,p,b])=>({n,norm:normName(n),t:new Set(t?t.split("."):[]),p,b:b?b.split("|"):[]}))}).catch(e=>console.warn("card list",e))}
+function loadCards(){return fetch("cards.json").then(r=>r.json()).then(j=>{const a=Array.isArray(j)?j:j.cards;if(j.thumbs)THUMBS=j.thumbs;if(j.pricesFetched){const el=$("priceDate");if(el)el.textContent=new Date(j.pricesFetched).toLocaleDateString(undefined,{month:"long",day:"numeric",year:"numeric"})}CARDS=a.map(([n,t,p,b])=>({n,norm:normName(n),t:new Set(t?t.split("."):[]),p,b:b?b.split("|"):[],ref:parseRefs(n)[0]||null}))}).catch(e=>console.warn("card list",e))}
 function matchCard(readings,typeKey,typeSure){
   if(!CARDS)return [];
   const rs=[...new Set(readings.map(normName))].filter(r=>r.replace(/ /g,"").length>=3);
@@ -633,6 +655,80 @@ function matchCard(readings,typeKey,typeSure){
     if(best>0.55)continue;
     out.push({c,d:best,s:best-(code&&c.t.has(code)?(typeSure?0.08:0.04):0)});}
   return out.sort((a,b)=>a.s-b.s).slice(0,4);
+}
+/* ---------- Lost Souls: no icon box and the same name, so match them by verse reference (then picture) ---------- */
+const ROMAN={i:"1",ii:"2",iii:"3"};
+function parseRefs(text){
+  const out=[],t=(text||"").replace(/[|]/g,"I").replace(/[“”"]/g," ");
+  const re=/(?:\b(III|II|I|[123])\s*)?\b([A-Z][a-z]{2,}(?:\s+of\s+[A-Z][a-z]+)?)\.?\s*(\d{1,3})\s*[:;.]\s*(\d{1,3})/g;let m;
+  while((m=re.exec(t))){const pre=m[1]?(ROMAN[m[1].toLowerCase()]||m[1])+" ":"";
+    out.push({book:(pre+m[2]).toLowerCase(),ch:+m[3],v:+m[4],text:m[0].trim()})}
+  return out;
+}
+function refScore(a,b){
+  if(a.ch!==b.ch||a.v!==b.v)return 9;
+  const L=Math.max(a.book.length,b.book.length);return wdist(a.book,b.book,L)/L;
+}
+function looksLostSoul(readings,iconType){
+  if(iconType==="lost_soul")return true;
+  return readings.some(r=>{const n=normName(r);return n.startsWith("lost soul")||(n.length>=6&&n.length<=13&&wdist(n,"lost soul",3)<=2.5)});
+}
+async function readRefText(cardHi,w){
+  const R={x:190,y:540,w:305,h:130},S=1.5,c=document.createElement("canvas");c.width=R.w*2*S;c.height=R.h*2*S;
+  const g=ctx2d(c);g.imageSmoothingQuality="high";g.drawImage(cardHi,R.x*2,R.y*2,R.w*2,R.h*2,0,0,c.width,c.height);
+  const im=g.getImageData(0,0,c.width,c.height),d=im.data;
+  for(let i=0;i<d.length;i+=4){const l=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];d[i]=d[i+1]=d[i+2]=l}
+  g.putImageData(im,0,0);
+  const inv=document.createElement("canvas");inv.width=c.width;inv.height=c.height;const ig=ctx2d(inv);ig.filter="invert(1)";ig.drawImage(c,0,0);
+  let text="";
+  try{
+    await w.setParameters({tessedit_pageseg_mode:"6",tessedit_char_whitelist:"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789:;.,- "});
+    for(const im of [c,inv]){const r=await withTimeout(w.recognize(im),20000,"Reading the reference");text+=" \n"+r.data.text}
+  }finally{
+    await w.setParameters({tessedit_pageseg_mode:"7",tessedit_char_whitelist:"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 '-,.:()&!?"});
+  }
+  return text;
+}
+async function bestByPicture(cards,card){
+  if(!THUMBS||!card||!cards.length)return null;
+  const me=smallVec(card,0,0,card.width,card.height),{per,cols,tw,th}=THUMBS,res=[];
+  for(const c of cards)for(let i=0;i<c.p.length;i++){const ti=c.p[i][4];if(ti==null)continue;
+    const sheet=await loadSheet(Math.floor(ti/per)),k=ti%per;
+    const v=smallVec(sheet,...trimWhite(sheet,(k%cols)*tw,Math.floor(k/cols)*th,tw,th));let d=0;for(let j=0;j<v.length;j++){const x=v[j]-me[j];d+=x*x}
+    res.push({c,i,d:d/v.length})}
+  res.sort((a,b)=>a.d-b.d);if(!res.length)return null;
+  const second=res.find(r=>r.c!==res[0].c);
+  return {c:res[0].c,printing:res[0].i,sure:!second||res[0].d<0.8*second.d};
+}
+async function maybeLostSoul(cardHi,card,readings,iconType,w,say){
+  if(!CARDS||!w||!looksLostSoul(readings,iconType))return null;
+  const LS=CARDS.filter(c=>c.t.has("LS"));
+  say("Lost Soul: reading the verse reference…");
+  const text=await readRefText(cardHi,w),refs=parseRefs(text);
+  const hits=[];for(const c of LS){if(!c.ref)continue;for(const r of refs){const sc=refScore(r,c.ref);if(sc<0.45)hits.push({c,sc,r})}}
+  hits.sort((a,b)=>a.sc-b.sc);
+  if(hits.length){
+    const tied=[...new Set(hits.filter(h=>h.sc<=hits[0].sc+0.05).map(h=>h.c))];
+    if(tied.length===1)return {card:tied[0],how:"reference",ref:hits[0].r.text,sure:true};
+    say("Lost Soul: comparing the picture…");const pic=await bestByPicture(tied,card);
+    return pic?{card:pic.c,how:"reference and picture",ref:hits[0].r.text,sure:true}:{card:tied[0],how:"reference",ref:hits[0].r.text,sure:false};
+  }
+  say("Lost Soul: comparing the picture…");
+  const pic=await bestByPicture(LS,card);
+  return pic?{card:pic.c,how:"picture",ref:refs[0]?refs[0].text:"",sure:pic.sure}:null;
+}
+function listTypeDisplay(c,iconType){
+  const t=c.t,has=k=>t.has(k);
+  const align=(good,evil,plain)=>iconType===good?[TYPES[good].label,"good"]:iconType===evil?[TYPES[evil].label,"evil"]:[plain,"neutral"];
+  if(has("LS"))return ["Lost Soul","neutral"];
+  if(has("CU"))return ["Curse","evil"];
+  if(has("CO"))return ["Covenant","good"];
+  if(has("D"))return align("good_dominant","evil_dominant","Dominant");
+  if(has("F")&&!has("S"))return align("good_fortress","evil_fortress","Fortress");
+  const parts=[...t].filter(k=>k!=="A").map(k=>CODE_LABEL[k]||k);
+  if(!parts.length)return has("A")?["Artifact","neutral"]:["",""];
+  const ev=has("EC")||has("EE"),gd=has("H")||has("GE");
+  return [parts.join(" / ")+(has("A")?" · Artifact":""),ev&&!gd?"evil":gd&&!ev?"good":"neutral"];
 }
 function cardTypeLabel(c){return [...c.t].map(k=>CODE_LABEL[k]||k).join(" / ")}
 /* Brigade from the icon box colour (a cross-check; the card list has the real brigade). */
@@ -692,14 +788,14 @@ function renderCard(c,chosen,how){
   $("cardMeta").innerHTML="";for(const [k,v] of meta){const dt=document.createElement("dt"),dd=document.createElement("dd");dt.textContent=k;dd.textContent=v;$("cardMeta").append(dt,dd)}
   if(current){current.match=c;current.printing=chosen}
 }
-function showMatch(readings,rawShown,source){
+function showMatch(readings,rawShown,source,forced){
   const nameEl=$("nameOut"),links=$("links"),others=$("others");links.innerHTML="";others.innerHTML="";$("priceLine").innerHTML="";$("cardMeta").innerHTML="";$("tradeAdd").hidden=true;if(current)current.match=null;
-  const res=current&&current.res,ms=matchCard(readings,res&&res.type,res&&res.margin>0.45);
+  const res=current&&current.res,ms=forced?[{c:forced.card,d:forced.sure?0:0.4,s:0}]:matchCard(readings,res&&res.type,res&&res.margin>0.45);
   // brigade colour as a small tie-breaker between close names
   if(current&&current.boxBrig&&ms.length>1){const top3=current.boxBrig.slice(0,3).map(x=>x[0]);
     for(const m of ms)if(m.c.b.some(b=>top3.includes(b)))m.s-=0.02;ms.sort((a,b)=>a.s-b.s)}
   const top=ms[0],sure=top&&top.d<=0.3,maybe=top&&!sure&&top.d<=0.45;
-  $("nameDebug").textContent=`read as “${rawShown||""}”`+(top?` · match distance ${top.d.toFixed(2)}`:"")+(source?` · ${source}`:"")+(current&&current.boxBrig?` · box colour looks ${current.boxBrig[0][0]}`:"");
+  $("nameDebug").textContent=(forced?`Lost Soul matched by ${forced.how}${forced.ref?" (read “"+forced.ref+"”)":""} · `:"")+`read as “${rawShown||""}”`+(top?` · match distance ${top.d.toFixed(2)}`:"")+(source?` · ${source}`:"")+(current&&current.boxBrig?` · box colour looks ${current.boxBrig[0][0]}`:"");
   if(top&&(sure||maybe)){
     nameEl.className="name";nameEl.textContent=top.c.n;
     $("nameConf").textContent=sure?"":"Best guess. Check the name, or tap a suggestion below.";
@@ -707,11 +803,9 @@ function showMatch(readings,rawShown,source){
     const myScan=scanId,card=current&&current.card;
     pickPrinting(top.c,card).then(r=>{if(scanId===myScan&&current&&current.match===top.c)renderCard(top.c,r.idx,r.how)});
     // type cross-check against the card list
-    const code=res&&TYPE_CODE[res.type];
-    if(code&&top.c.t.size&&!top.c.t.has(code)){
-      const chip=$("typeOut");chip.textContent=cardTypeLabel(top.c);const ev=[...top.c.t].some(k=>k==="EC"||k==="EE"),gd=[...top.c.t].some(k=>k==="H"||k==="GE");chip.className="type-chip "+(ev&&!gd?"evil":gd&&!ev?"good":"neutral");
-      $("typeConf").textContent=`From the card list · the icon looked like ${TYPES[res.type].label}`;
-    }
+    const [tl,ts]=listTypeDisplay(top.c,res&&res.type);
+    if(tl){const chip=$("typeOut");chip.textContent=tl;chip.className="type-chip "+ts;
+      $("typeConf").textContent=`From the card list · the icon looked like ${res?TYPES[res.type].label:"?"}`;}
   }else{
     nameEl.className=rawShown?"name":"name pending";nameEl.textContent=rawShown||"Couldn't read the name";
     $("nameConf").textContent=CARDS?"Not found in the card list. Try another photo, or search by name.":"Card list didn't load.";
@@ -809,7 +903,10 @@ async function scan(src,{from}={}){
       cands.push({name:cleanName(r.data.text),conf:r.data.confidence,b});}
     const best=pickName(cands);
     showBin(best.b);
-    showMatch([best.fixedName,...cands.map(c=>c.name)],best.fixedName,"");
+    const readings=[best.fixedName,...cands.map(c=>c.name)];
+    const ls=await maybeLostSoul(cardHi,card,readings,res.type,w,t=>{if(id===scanId)setStatus(t)});
+    if(id!==scanId)return;
+    showMatch(readings,best.fixedName,"",ls);
     setStatus(best.conf<60&&claudeOk?"Not sure about the name? Tap Read name with Claude.":"");
   }catch(e){nameEl.textContent="Couldn't read the name";setStatus("Reading the name failed: "+e.message,true)}
 }
@@ -830,7 +927,8 @@ let BUILTIN=[];
 async function buildBuiltins(){
   const out=[];
   for(const [label,src] of SAMPLES){
-    try{const img=await loadImage(src);const {card}=prepareCard(img);const f=features(card);out.push({label,hog:f.hog,col:f.col,src:"builtin"})}
+    try{const img=await loadImage(src);const {card}=prepareCard(img);const f=features(card);out.push({label,hog:f.hog,col:f.col,src:"builtin"});
+      const t=trFeatures(card);TR_REFS.push({chalice:CHALICE_TR.has(src),hog:t.hog,col:t.col})}
     catch(e){console.warn("sample failed",src,e)}
   }
   return out;
@@ -1034,8 +1132,10 @@ async function identifyCard(src,say){ // photo -> best matches, for the trade sc
   say("Reading the name…");const w=await getWorker();
   if(!w)return {matches:[],raw:"",error:ocrError,card};
   const cands=[];for(const m of NAME_MODES){const r=await withTimeout(w.recognize(nameBinary(cardHi,2,m)),20000,"Reading the name");cands.push({name:cleanName(r.data.text),conf:r.data.confidence})}
-  const best=pickName(cands);
-  return {matches:matchCard([best.fixedName,...cands.map(c=>c.name)],res.type,res.margin>0.45),raw:best.fixedName,card};
+  const best=pickName(cands),readings=[best.fixedName,...cands.map(c=>c.name)];
+  const ls=await maybeLostSoul(cardHi,card,readings,res.type,w,say);
+  if(ls)return {matches:[{c:ls.card,d:ls.sure?0:0.4,s:0}],raw:best.fixedName,card};
+  return {matches:matchCard(readings,res.type,res.margin>0.45),raw:best.fixedName,card};
 }
 async function addByPhoto(k,file){
   const ad=$("adder-"+k);ad.hidden=false;$("searchWrap-"+k).hidden=true;$("confirm-"+k).hidden=true;
