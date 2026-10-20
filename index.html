@@ -53,10 +53,11 @@ button:disabled{opacity:.5;cursor:default}
 .row>*{flex:1 1 140px}
 select,input{color-scheme:dark}
 /* camera */
-.viewer{position:relative;width:100%;aspect-ratio:3/4;max-width:100%;background:#07040c;border-radius:10px;overflow:hidden;box-shadow:var(--glow-soft)}
+.viewer{scroll-margin-top:72px;position:relative;width:100%;aspect-ratio:3/4;max-width:100%;background:#07040c;border-radius:10px;overflow:hidden;box-shadow:var(--glow-soft)}
 .viewer video,.viewer canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .guide{position:absolute;left:50%;top:50%;height:82%;aspect-ratio:2.5/3.5;max-width:86%;transform:translate(-50%,-50%);border:2px solid rgba(200,175,255,.9);border-radius:14px;box-shadow:0 0 0 999px rgba(10,4,20,.45),0 0 24px rgba(180,140,255,.6)}
-.viewer .hint{position:absolute;left:0;right:0;bottom:10px;text-align:center;color:#fff;font-size:.9rem;text-shadow:0 1px 3px #000;padding:0 12px}
+.viewer #camOverlay{pointer-events:none}
+.viewer .hint{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);max-width:calc(100% - 24px);text-align:center;color:var(--ink);font:700 .9rem var(--body);background:rgba(17,10,28,.78);border:1px solid var(--line-strong);border-radius:8px;padding:8px 12px;box-shadow:var(--glow-soft)}
 .file-btn{position:relative}
 .add-row>*{flex:1 1 120px}
 .file-btn input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
@@ -178,12 +179,14 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     <h2 id="scanH" class="label">Scan a card</h2>
     <div class="viewer" id="viewer" hidden>
       <video id="video" playsinline muted autoplay></video>
-      <div class="guide" aria-hidden="true"></div>
-      <div class="hint">Keep the whole card in view, upright.</div>
+      <canvas id="camOverlay" aria-hidden="true"></canvas>
+      <div class="hint" id="camHint" role="status">Looking for a card…</div>
     </div>
     <div class="scan-actions">
       <label class="btn file-btn primary big" id="takeLbl"><input id="take" type="file" accept="image/*" capture="environment">Take a photo</label>
-      <button class="primary big" id="snap" type="button" hidden>Scan card</button>
+      <button id="snap" type="button" hidden>Scan now</button>
+      <button id="cancelScan" type="button" hidden>Cancel scan</button>
+      <button id="stopCam" type="button" hidden>Stop camera</button>
       <label class="btn file-btn"><input id="pick" type="file" accept="image/*">Upload</label>
       <button id="startCam" type="button">Live camera</button>
     </div>
@@ -766,25 +769,104 @@ async function buildBuiltins(){
   return out;
 }
 
-/* ---------- camera & files ---------- */
-let stream=null;
+/* ---------- live camera with auto-scan ----------
+   Every ~250 ms: look for the card in a small copy of the frame. When it's found in the same spot
+   for several looks in a row, take a full-size frame and read it. Then wait for the card to be
+   taken away (or swapped) before scanning again. */
+let stream=null,camLoop=null,camState="off",steady=0,lastQuad=null,goneCount=0,lastScanned="";
+const STEADY_NEEDED=4;
+function camHint(t){$("camHint").textContent=t}
+function camButtons(){
+  const on=camState!=="off";
+  $("viewer").hidden=!on;$("startCam").hidden=on;$("stopCam").hidden=!on;$("snap").hidden=!on||camState==="reading";
+  $("cancelScan").hidden=camState!=="reading";
+  $("takeLbl").classList.toggle("primary",!on);$("takeLbl").classList.toggle("big",!on);
+}
+async function getStream(){
+  const tries=[
+    {video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1440}},audio:false},
+    {video:{facingMode:"environment"},audio:false},
+    {video:true,audio:false}];
+  let err;
+  for(const c of tries){try{return await navigator.mediaDevices.getUserMedia(c)}catch(e){err=e;if(e&&e.name==="NotAllowedError")break}}
+  throw err;
+}
 async function startCamera(){
+  if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)){setStatus("This browser can't open the live camera. Use Take a photo instead.",true);return}
+  setStatus("Opening camera…");
   try{
-    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1440}},audio:false});
-    const v=$("video");v.srcObject=stream;await v.play();
-    $("viewer").hidden=false;$("snap").hidden=false;$("startCam").hidden=true;$("takeLbl").classList.remove("primary","big");setStatus("Point at the card, then tap Scan card. It doesn't need to fill the outline.");
+    stream=await getStream();
+    const v=$("video");v.muted=true;v.setAttribute("playsinline","");v.srcObject=stream;
+    try{await v.play()}catch(e){/* autoplay attribute starts it once frames arrive */}
+    camState="looking";steady=0;lastQuad=null;goneCount=0;lastScanned="";camButtons();
+    setStatus("");camHint("Looking for a card…");
+    clearInterval(camLoop);camLoop=setInterval(camTick,250);
+    $("viewer").scrollIntoView({block:"start",behavior:"smooth"});
   }catch(e){
-    $("startCam").hidden=true;setStatus("Live camera isn't available here. Use Take a photo; it opens your phone's camera.");
+    const why=e&&e.name==="NotAllowedError"?"Camera permission was turned down. Allow camera access for this site in your phone's settings, then try again."
+      :e&&e.name==="NotFoundError"?"No camera was found."
+      :e&&e.name==="NotReadableError"?"Another app is using the camera. Close it and try again."
+      :"The live camera couldn't start ("+((e&&(e.name||e.message))||"unknown error")+").";
+    setStatus(why+" Take a photo still works.",true);stopCamera(true);
   }
 }
-function snapFrame(){ // crop the video to the guide area (plus margin) so the card dominates
-  const v=$("video"),vw=v.videoWidth,vh=v.videoHeight;if(!vw)return;
-  const box=$("viewer").getBoundingClientRect(),gr=document.querySelector(".guide").getBoundingClientRect();
-  const sc=Math.max(box.width/vw,box.height/vh),ox=(box.width-vw*sc)/2,oy=(box.height-vh*sc)/2;
-  const m=0.12;let x=(gr.left-box.left-ox)/sc,y=(gr.top-box.top-oy)/sc,w=gr.width/sc,h=gr.height/sc;
-  x-=w*m;y-=h*m;w*=1+2*m;h*=1+2*m;x=Math.max(0,x);y=Math.max(0,y);w=Math.min(vw-x,w);h=Math.min(vh-y,h);
-  const c=document.createElement("canvas");c.width=Math.round(w);c.height=Math.round(h);
-  c.getContext("2d").drawImage(v,x,y,w,h,0,0,c.width,c.height);scan(c,{from:"camera"});
+function stopCamera(silent){
+  clearInterval(camLoop);camLoop=null;
+  if(camState==="reading")scanId++; // abandon a read in progress
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+  $("video").srcObject=null;camState="off";camButtons();clearOverlay();
+  if(!silent)setStatus("Camera stopped.");
+}
+function cancelScan(){
+  if(camState!=="reading")return;
+  scanId++;camState="waiting";lastScanned="(cancelled)";camButtons();setStatus("Scan cancelled.");
+  camHint("Cancelled. Move the card away and back to scan again.");
+}
+function clearOverlay(){const c=$("camOverlay");c.getContext("2d").clearRect(0,0,c.width,c.height)}
+function drawQuad(q,fw,fh,color){
+  const box=$("viewer").getBoundingClientRect(),c=$("camOverlay"),dpr=window.devicePixelRatio||1;
+  if(c.width!==Math.round(box.width*dpr)){c.width=Math.round(box.width*dpr);c.height=Math.round(box.height*dpr)}
+  const g=c.getContext("2d");g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,box.width,box.height);if(!q)return;
+  const sc=Math.max(box.width/fw,box.height/fh),ox=(box.width-fw*sc)/2,oy=(box.height-fh*sc)/2;
+  g.beginPath();q.forEach(([x,y],i)=>{const X=ox+x*sc,Y=oy+y*sc;i?g.lineTo(X,Y):g.moveTo(X,Y)});g.closePath();
+  g.lineWidth=3;g.strokeStyle=color;g.shadowColor=color;g.shadowBlur=14;g.stroke();
+}
+function quadMove(a,b){if(!a||!b)return 1;const size=Math.hypot(a[2][0]-a[0][0],a[2][1]-a[0][1])||1;
+  return Math.max(...a.map((p,i)=>Math.hypot(p[0]-b[i][0],p[1]-b[i][1])))/size}
+let ticking=false;
+async function camTick(){
+  if(ticking||camState==="off"||camState==="reading")return;
+  const v=$("video");if(!v.videoWidth)return;
+  ticking=true;
+  try{
+    const small=canvasFrom(v,480);whiteBalance(small);
+    const q=detectCard(small);
+    if(camState==="waiting"){ // after a scan: wait until the card is removed or replaced
+      if(!q||quadMove(q,lastQuad)>0.25){goneCount++}else goneCount=0;
+      drawQuad(q,small.width,small.height,"rgba(242,196,109,.9)");
+      if(goneCount>=3){camState="looking";steady=0;lastQuad=null;camHint("Looking for a card…")}
+      return;
+    }
+    if(!q){steady=0;lastQuad=null;clearOverlay();camHint("Looking for a card…");return}
+    steady=quadMove(q,lastQuad)<0.04?steady+1:0;lastQuad=q;
+    drawQuad(q,small.width,small.height,steady>=2?"rgba(242,196,109,.95)":"rgba(180,140,255,.95)");
+    if(steady<STEADY_NEEDED){camHint(steady?"Hold steady…":"Card found. Hold steady…");return}
+    await autoScan();
+  }finally{ticking=false}
+}
+async function autoScan(){
+  const v=$("video");camState="reading";camButtons();camHint("Reading the card…");
+  const frame=canvasFrom(v,2400);const myId=scanId+1;
+  await scan(frame,{from:"live camera"});
+  if(scanId!==myId||camState!=="reading")return; // cancelled or stopped
+  const name=current&&current.match?current.match.n:"";const pr=current&&current.match?priceSummary(current.match).replace(/<[^>]+>/g,""):"";
+  lastScanned=name;camState="waiting";goneCount=0;camButtons();
+  camHint(name?`Got it: ${name}${pr?" · "+pr:""}. Show the next card.`:"Couldn't read that one. Move it away and try again, or tap Scan now.");
+}
+function snapFrame(){ // manual "Scan now"
+  const v=$("video");if(!v.videoWidth)return;
+  if(camState==="off"){scan(canvasFrom(v,2400),{from:"camera"});return}
+  autoScan();
 }
 async function onFile(e){
   const f=e.target.files&&e.target.files[0];if(!f)return;
@@ -904,9 +986,8 @@ async function addByPhoto(k,file){
   for(const [label,src] of SAMPLES){const b=document.createElement("button");b.type="button";b.setAttribute("aria-label","Scan sample: "+TYPES[label].label);
     const im=document.createElement("img");im.src=src;im.alt="";b.appendChild(im);
     b.onclick=async()=>{const img=await loadImage(src);scan(img,{from:"sample "+TYPES[label].label});$("resultPanel").scrollIntoView({behavior:"smooth",block:"start"})};sg.appendChild(b)}
-  $("startCam").onclick=startCamera;$("snap").onclick=snapFrame;
+  $("startCam").onclick=startCamera;$("snap").onclick=snapFrame;$("stopCam").onclick=()=>stopCamera();$("cancelScan").onclick=cancelScan;
   $("take").onchange=onFile;$("pick").onchange=onFile;
-  if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia))$("startCam").hidden=true;
   $("teachBtn").onclick=()=>{
     if(!current){$("teachInfo").textContent="Scan a card first.";return}
     const label=sel.value,t=taught();t.push({label,hog:Array.from(current.feat.hog,v=>+v.toFixed(3)),col:current.feat.col.map(v=>+v.toFixed(3))});
