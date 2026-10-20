@@ -102,6 +102,21 @@ def main(root="."):
     for g in groups.values():
         g["p"].sort(key=lambda x: (x[3] == 0, x[2]))
     cards = [[n, ".".join(sorted(g["t"])), g["p"], "|".join(sorted(g["b"]))] for n, g in sorted(groups.items(), key=lambda kv: kv[0].lower())]
+    # ability text per card name, for the "read the ability" backup (loaded only when a name is unclear)
+    texts = {}
+    for p in sorted(singles, key=lambda p: p["title"].lower()):
+        m = re.match(r"^(.*?)\s*\(([^()]*)\)\s*$", p["title"])
+        name = (m.group(1) if m else p["title"]).strip()
+        t = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", p.get("body_html") or "")).strip()
+        lst = texts.setdefault(name, [])
+        if t and t not in lst:
+            lst.append(t)
+    tpath = os.path.join(root, "texts.json")
+    old_t = json.load(open(tpath)) if os.path.exists(tpath) else None
+    if old_t != texts:
+        json.dump(texts, open(tpath, "w"), separators=(",", ":"), ensure_ascii=False)
+        print("texts updated")
+
     out = {"pricesFetched": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
            "thumbs": {"total": len(index["items"]), "per": PER, "cols": COLS, "tw": TW, "th": TH}, "cards": cards}
     old = json.load(open(os.path.join(root, "cards.json"))) if os.path.exists(os.path.join(root, "cards.json")) else {}
