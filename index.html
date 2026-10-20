@@ -1493,6 +1493,13 @@ const RELAY="https://ntfy.sh/";
 const DEVICE=(()=>{let d=lsGet("rcs.device",null);if(!d){d=Math.random().toString(36).slice(2,10);lsSet("rcs.device",d)}return d})();
 const LIVE_KEY="rcs.live";
 let live=null,pubTimer=null,qrLib=null;
+/* load a helper script: our own copy first (works on any Wi-Fi + offline), the public CDN as a backup */
+async function loadScriptFrom(urls,ok){
+  for(const u of urls){
+    try{await new Promise((res,rej)=>{const s=document.createElement("script");s.src=u;s.onload=res;s.onerror=rej;document.head.appendChild(s)});if(ok())return}catch(e){}
+  }
+  throw new Error("script failed");
+}
 const CODE_ABC="ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 function newRoom(){const a=new Uint8Array(8);crypto.getRandomValues(a);return "rut-"+[...a].map(b=>CODE_ABC[b%CODE_ABC.length]).join("").toLowerCase()}
 function roomCode(room){const c=room.replace(/^rut-/,"").toUpperCase();return c.length===8?c.slice(0,4)+"-"+c.slice(4):c}
@@ -1516,7 +1523,7 @@ async function startQrScan(){
   if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)){msg.textContent="Can't open the camera here. Type their code instead.";return}
   try{
     if("BarcodeDetector" in window){try{const f=await BarcodeDetector.getSupportedFormats();if(f.includes("qr_code"))qrDet=new BarcodeDetector({formats:["qr_code"]})}catch(e){qrDet=null}}
-    if(!qrDet&&!window.jsQR)await new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";s.onload=res;s.onerror=rej;document.head.appendChild(s)});
+    if(!qrDet&&!window.jsQR)await loadScriptFrom(["jsQR.min.js","https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"],()=>window.jsQR);
   }catch(e){msg.textContent="Couldn't load the QR reader. Check your internet or type their code instead.";return}
   try{qrStream=await getStream()}catch(e){msg.textContent=e&&e.name==="NotAllowedError"?"Camera is blocked. Allow camera access, or type their code instead.":"Couldn't open the camera. Type their code instead.";return}
   const v=$("liveScanVid");v.srcObject=qrStream;try{await v.play()}catch(e){}
@@ -1590,7 +1597,7 @@ function setLiveStatus(){
 async function drawQr(url){
   const box=$("liveQr");box.innerHTML="";
   try{
-    if(!window.qrcode)await new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js";s.onload=res;s.onerror=rej;document.head.appendChild(s)});
+    if(!window.qrcode)await loadScriptFrom(["qrcode.min.js","https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"],()=>window.qrcode);
     const q=qrcode(0,"M");q.addData(url);q.make();box.innerHTML=q.createSvgTag({cellSize:4,margin:0,scalable:true});box.hidden=false;
   }catch(e){box.hidden=true}
 }
