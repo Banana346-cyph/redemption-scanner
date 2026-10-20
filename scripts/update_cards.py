@@ -97,7 +97,8 @@ def main(root="."):
         g["t"].update(TYPES[t] for t in p["tags"] if t in TYPES)
         g["b"].update(t for t in p["tags"] if t in BRIGADES)
         v = p["variants"][0]
-        g["p"].append([set_, p["handle"], round(float(v["price"]), 2), 1 if v.get("available") else 0, slots[p["handle"]]])
+        g["p"].append([set_, p["handle"], round(float(v["price"]), 2), 1 if v.get("available") else 0, slots[p["handle"]],
+                       ".".join(sorted(TYPES[t] for t in p["tags"] if t in TYPES))])
     for g in groups.values():
         g["p"].sort(key=lambda x: (x[3] == 0, x[2]))
     cards = [[n, ".".join(sorted(g["t"])), g["p"], "|".join(sorted(g["b"]))] for n, g in sorted(groups.items(), key=lambda kv: kv[0].lower())]
