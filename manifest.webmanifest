@@ -1,6 +1,6 @@
 {
-  "name": "Redemption Scanner",
-  "short_name": "Scanner",
+  "name": "RUT: Redemption Utility Tool",
+  "short_name": "RUT",
   "description": "Scan Redemption cards to identify them, see Your Turn Games prices, and build trades.",
   "start_url": "./",
   "scope": "./",

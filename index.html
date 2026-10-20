@@ -10,10 +10,10 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Scanner">
+<meta name="apple-mobile-web-app-title" content="RUT">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}*,*::before,*::after{box-sizing:border-box}body{margin:0}img{max-width:100%}</style>
-<title>Redemption Card Scanner</title>
+<title>RUT · Redemption Utility Tool</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Marcellus&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <style>
@@ -98,6 +98,21 @@ select,input{color-scheme:dark}
 .small{font-size:.86rem;color:var(--muted);margin:0}
 @media (max-width:420px){.result{grid-template-columns:104px 1fr}}
 [hidden]{display:none!important}
+.gate{position:fixed;inset:0;z-index:50;background:radial-gradient(120% 70% at 50% -10%,rgba(124,58,237,.45),transparent 60%),var(--bg);display:flex;align-items:center;justify-content:center;overflow-y:auto;
+  padding:max(20px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(20px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.gate-card{max-width:440px;width:100%;display:flex;flex-direction:column;gap:14px;align-items:stretch;text-align:left}
+.gate-icon{width:72px;height:72px;border-radius:16px;box-shadow:var(--glow);align-self:center}
+.gate h2{font:400 1.6rem/1.15 var(--display);margin:0;text-align:center;text-wrap:balance}
+.gate-sub{margin:0;color:var(--muted);text-align:center}
+.gate-steps{margin:0;padding:0;list-style:none;counter-reset:st;display:flex;flex-direction:column;gap:10px}
+.gate-steps li{counter-increment:st;display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px}
+.gate-steps li::before{content:counter(st);width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:700 1rem var(--mono);color:var(--accent-ink);background:var(--accent);box-shadow:var(--glow-soft)}
+.gate-steps svg{width:22px;height:22px;vertical-align:-5px;color:var(--accent)}
+.gate-steps b{color:var(--ink)}
+.gate-done{margin:0;text-align:center;font-weight:700;color:var(--gold)}
+.gate-skip{background:none;border:0;box-shadow:none;color:var(--muted);text-decoration:underline;text-underline-offset:3px;font-weight:500;min-height:44px}
+body.gated{overflow:hidden}
+
 .trade-sum .vs b.plain{color:var(--ink)}
 .coll-list{display:flex;flex-direction:column;gap:6px}
 .coll-row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
@@ -193,8 +208,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 <body>
 <div class="wrap">
   <header>
-    <h1>Redemption <span>Scanner</span></h1>
-    <p class="sub">Identify · price · trade</p>
+    <h1><span>RUT</span></h1>
+    <p class="sub">Redemption Utility Tool · scan, price, trade</p>
   </header>
   <nav class="tabs" role="tablist" aria-label="Sections">
     <button type="button" role="tab" id="tabScan" aria-selected="true" aria-controls="scanView">Scan</button>
@@ -400,6 +415,19 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     <div class="row"><button type="button" id="clearColl">Clear collection</button></div>
   </div>
   <p class="small install-tip" id="installTip" hidden></p>
+</div>
+
+
+<div class="gate" id="installGate" role="dialog" aria-modal="true" aria-labelledby="gateTitle" hidden>
+  <div class="gate-card">
+    <img src="icon-192.png" alt="" class="gate-icon" width="72" height="72">
+    <h2 id="gateTitle">Add RUT to your home screen</h2>
+    <p class="gate-sub">It opens full screen like a normal app, keeps working without signal, and the live camera works best there. It's free and takes about 10 seconds.</p>
+    <ol class="gate-steps" id="gateSteps"></ol>
+    <button type="button" class="primary big" id="gateInstall" hidden>Install the app</button>
+    <p class="gate-done" id="gateDone" hidden></p>
+    <button type="button" class="gate-skip" id="gateSkip">Use it in the browser instead</button>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
@@ -1365,13 +1393,13 @@ function showBackupInfo(){const d=lsGet(BK_KEY,null),n=coll.reduce((a,x)=>a+x.qt
     "Your collection lives only on this phone"+(n?` (${n} card${n===1?"":"s"})`:"")+`. Save a backup so you can get it back on a new phone or after ${PLAT.clearData}.`}
 async function saveBackupFile(){
   const msg=$("backupMsg");if(!coll.length){msg.textContent="Your collection is empty, so there's nothing to back up yet.";return}
-  const name=`redemption-collection-${new Date().toISOString().slice(0,10)}.json`,text=JSON.stringify(backupData(),null,1);
+  const name=`rut-collection-${new Date().toISOString().slice(0,10)}.json`,text=JSON.stringify(backupData(),null,1);
   // phones: the share menu offers "Save to Files" (iPhone) or Drive, Gmail, etc. (Android).
   // Android Chrome won't share .json as JSON, so offer the same file labelled as plain text there.
   const asJson=new File([text],name,{type:"application/json"}),asText=new File([text],name,{type:"text/plain"});
   try{
     const file=navigator.canShare&&(navigator.canShare({files:[asJson]})?asJson:navigator.canShare({files:[asText]})?asText:null);
-    if(file){await navigator.share({files:[file],title:"Redemption collection backup"});markBackedUp();msg.textContent=`Backup shared. Make sure it ended up somewhere safe, like ${PLAT.keep}.`;return}
+    if(file){await navigator.share({files:[file],title:"RUT collection backup"});markBackedUp();msg.textContent=`Backup shared. Make sure it ended up somewhere safe, like ${PLAT.keep}.`;return}
   }catch(e){if(e&&e.name==="AbortError")return}
   const file=asJson;
   try{const a=document.createElement("a");a.href=URL.createObjectURL(file);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);
@@ -1388,7 +1416,7 @@ let pendingRestore=null;
 function parseBackup(text){
   text=(text||"").trim();let obj;
   if(text.startsWith("RSC1:"))obj=JSON.parse(b64d(text.slice(5)));else obj=JSON.parse(text);
-  if(!obj||obj.app!=="redemption-scanner"||!Array.isArray(obj.cards))throw new Error("That isn't a Redemption Scanner backup.");
+  if(!obj||obj.app!=="redemption-scanner"||!Array.isArray(obj.cards))throw new Error("That isn't a RUT backup.");
   const items=[];
   for(const [h,qty,n,set] of obj.cards){const q=Math.max(1,Math.floor(+qty||1));const it=itemFromHandle(h)||(n?{n,set:set||"",h,price:null,ti:null}:null);if(it)items.push({...it,qty:q})}
   return {items,saved:obj.saved};
@@ -1417,7 +1445,7 @@ async function shareTrade(){
   const msg=$("shareMsg");
   if(!trade.mine.length&&!trade.theirs.length){msg.textContent="Add some cards first.";return}
   const url=tradeLink(),text=`Trade: I give ${money(sideTotal("mine"))}, you give ${money(sideTotal("theirs"))}`;
-  try{if(navigator.share){await navigator.share({title:"Redemption trade",text,url});msg.textContent="Shared.";return}}catch(e){if(e&&e.name==="AbortError")return}
+  try{if(navigator.share){await navigator.share({title:"RUT trade",text,url});msg.textContent="Shared.";return}}catch(e){if(e&&e.name==="AbortError")return}
   try{await copyText(url);msg.textContent="Link copied. Paste it in a message to the other player."}
   catch(e){msg.textContent="Copy this link: "+url}
 }
@@ -1434,9 +1462,53 @@ function checkSharedTrade(){
   $("sharedLoad").onclick=()=>{trade={mine:give,theirs:get};saveTrade();renderTrade();clear()};
   $("sharedDismiss").onclick=clear;
 }
+
+/* ---------- first visit: show how to put the app on the home screen ---------- */
+const SHARE_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Share icon"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>';
+const PLUS_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-label="Add icon"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></svg>';
+const DOTS_SVG='<svg viewBox="0 0 24 24" fill="currentColor" aria-label="Menu icon"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>';
+function isInstalled(){return window.matchMedia("(display-mode: standalone)").matches||navigator.standalone===true}
+function gateSteps(){
+  const ol=$("gateSteps"),li=h=>{const e=document.createElement("li");e.innerHTML="<span>"+h+"</span>";ol.appendChild(e)};ol.innerHTML="";
+  const otherIOSBrowser=IS_IOS&&/CriOS|FxiOS|EdgiOS|OPiOS/.test(UA),samsung=/SamsungBrowser/.test(UA),firefox=/Firefox/.test(UA);
+  if(IS_IOS&&otherIOSBrowser){
+    li("Copy this page's address and open it in <b>Safari</b>.");
+    li(`In Safari, tap the <b>Share</b> button ${SHARE_SVG} at the bottom of the screen.`);
+    li(`Scroll down and tap <b>Add to Home Screen</b> ${PLUS_SVG}, then <b>Add</b>.`);
+  }else if(IS_IOS){
+    li(`Tap the <b>Share</b> button ${SHARE_SVG}. It's at the bottom of Safari, or inside the <b>•••</b> menu on newer iPhones.`);
+    li(`Scroll down and tap <b>Add to Home Screen</b> ${PLUS_SVG}.`);
+    li("Tap <b>Add</b>, then open <b>RUT</b> from your home screen.");
+  }else if(IS_ANDROID&&samsung){
+    li("Tap the <b>☰ menu</b> at the bottom of Samsung Internet.");
+    li("Tap <b>Add page to</b>, then <b>Home screen</b>.");
+    li("Open <b>RUT</b> from your home screen.");
+  }else if(IS_ANDROID&&firefox){
+    li(`Tap the <b>⋮ menu</b> ${DOTS_SVG}.`);
+    li("Tap <b>Install</b> (or <b>Add to Home screen</b>).");
+    li("Open <b>RUT</b> from your home screen.");
+  }else if(IS_ANDROID){
+    li(`Tap the <b>⋮ menu</b> ${DOTS_SVG} at the top right of Chrome.`);
+    li("Tap <b>Install app</b> or <b>Add to Home screen</b>, then <b>Install</b>.");
+    li("Open <b>RUT</b> from your home screen or app drawer.");
+  }else{
+    li("This app is made for phones. Open this page on your phone to install it.");
+    li("On a computer you can still use it in the browser.");
+  }
+}
+function showGate(){
+  const g=$("installGate");if(!g)return;
+  const shared=/^#t=/.test(location.hash),skipped=lsGet("rcs.skipInstall",false);
+  if(isInstalled()||!document.querySelector('link[rel="manifest"]')||skipped&&!shared){g.hidden=true;document.body.classList.remove("gated");return}
+  gateSteps();$("gateInstall").hidden=!installEvt;
+  $("gateSkip").textContent=shared?"Just look at the shared trade for now":IS_IOS||IS_ANDROID?"Use it in the browser instead":"Continue on this computer";
+  g.hidden=false;document.body.classList.add("gated");
+}
+function hideGate(remember){if(remember)lsSet("rcs.skipInstall",true);$("installGate").hidden=true;document.body.classList.remove("gated")}
+window.addEventListener("appinstalled",()=>{const d=$("gateDone");if(d){d.hidden=false;d.textContent="Installed! Open RUT from your home screen.";$("gateInstall").hidden=true;$("gateSteps").innerHTML=""}});
 /* ---------- install tip (only on the real app, only when not installed yet) ---------- */
 let installEvt=null;
-window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();installEvt=e;showInstallTip()});
+window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();installEvt=e;showInstallTip();const b=$("gateInstall");if(b&&!$("installGate").hidden)b.hidden=false});
 function showInstallTip(){
   const tip=$("installTip");if(!tip)return;
   const standalone=window.matchMedia("(display-mode: standalone)").matches||navigator.standalone;
@@ -1490,7 +1562,10 @@ function showInstallTip(){
   $("clearTrade").onclick=()=>{trade={mine:[],theirs:[]};saveTrade();renderTrade()};
   const addFromScan=k=>{if(!current||!current.match)return;setTab("trade");showConfirm(k,current.match,[],"",current.printing||0);$("adder-"+k).scrollIntoView({block:"center"})};
   $("addMine").onclick=()=>addFromScan("mine");$("addTheirs").onclick=()=>addFromScan("theirs");
-  showInstallTip();
+  showInstallTip();showGate();
+  $("gateSkip").onclick=()=>hideGate(!/^#t=/.test(location.hash));
+  $("gateInstall").onclick=async()=>{if(!installEvt)return;installEvt.prompt();let ok=false;try{ok=(await installEvt.userChoice).outcome==="accepted"}catch(e){}installEvt=null;$("gateInstall").hidden=true;
+    if(ok){$("gateDone").hidden=false;$("gateDone").textContent="Installed! Open RUT from your home screen."}};
   renderTrade();renderColl();if(location.hash==="#trade")setTab("trade");if(location.hash==="#collection")setTab("collection");
   const setDebug=()=>{let on=location.hash==="#debug";try{if(on)localStorage.setItem("rcs.debug","1");if(location.hash==="#nodebug")localStorage.removeItem("rcs.debug");on=on||localStorage.getItem("rcs.debug")==="1"}catch(e){}document.documentElement.classList.toggle("debug",on)};
   setDebug();window.addEventListener("hashchange",setDebug);
