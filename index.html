@@ -1,0 +1,944 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#110a1c">
+<meta name="description" content="Scan Redemption cards to identify them, see Your Turn Games prices, and build trades.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Scanner">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}*,*::before,*::after{box-sizing:border-box}body{margin:0}img{max-width:100%}</style>
+<title>Redemption Card Scanner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Marcellus&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one phone column. Scan / Trade switch at the top; the card result reads like a card slab.
+   Look: deep purple night with a soft violet glow on the things you can press, gold for money. */
+:root{
+  --bg:#110a1c; --bg-glow:rgba(124,58,237,.30); --surface:#1a1029; --surface-2:#231638; --line:#33234f; --line-strong:#4a3570;
+  --ink:#f1ecfb; --muted:#a798c4; --faint:#6f6290;
+  --accent:#b48cff; --accent-deep:#7c3aed; --accent-ink:#13081f;
+  --gold:#f2c46d; --good:#f2c46d; --good-bg:rgba(242,196,109,.12); --evil:#ff7d93; --evil-bg:rgba(255,125,147,.12);
+  --site:#8ec5ff; --site-bg:rgba(142,197,255,.12); --warn:#ffb562;
+  --glow:0 0 0 1px rgba(180,140,255,.55),0 6px 28px -6px rgba(124,58,237,.75);
+  --glow-soft:0 0 0 1px rgba(180,140,255,.25),0 4px 22px -10px rgba(124,58,237,.6);
+  --display:"Marcellus",Georgia,"Times New Roman",serif;
+  --body:"Atkinson Hyperlegible",ui-sans-serif,system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+html,body{background:var(--bg);color:var(--ink)}
+body{font:16px/1.5 var(--body);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 56px;
+  background:radial-gradient(120% 60% at 50% -12%,var(--bg-glow),transparent 62%) no-repeat,var(--bg);min-height:100%}
+.wrap{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-top:4px}
+h1{font:400 1.7rem/1.05 var(--display);margin:0;letter-spacing:.02em}
+h1 span{color:var(--accent);text-shadow:0 0 18px rgba(180,140,255,.55)}
+h2{font:400 1.2rem/1.2 var(--display);margin:0;letter-spacing:.02em}
+.sub{color:var(--muted);margin:0;font-size:.85rem}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.label{font:700 .7rem/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+button,.btn{font:700 1rem var(--body);border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink);padding:12px 16px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;transition:box-shadow .15s,border-color .15s,background .15s}
+button:hover,.btn:hover{border-color:var(--accent)}
+button.primary,.btn.primary{background:linear-gradient(180deg,#c3a2ff,#9a6bff);color:var(--accent-ink);border-color:transparent;box-shadow:var(--glow)}
+button.primary:hover,.btn.primary:hover{box-shadow:0 0 0 1px rgba(200,170,255,.8),0 8px 34px -6px rgba(124,58,237,.95)}
+button:focus-visible,.btn:focus-within:has(input:focus-visible),select:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+button:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row>*{flex:1 1 140px}
+select,input{color-scheme:dark}
+/* camera */
+.viewer{position:relative;width:100%;aspect-ratio:3/4;max-width:100%;background:#07040c;border-radius:10px;overflow:hidden;box-shadow:var(--glow-soft)}
+.viewer video,.viewer canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.guide{position:absolute;left:50%;top:50%;height:82%;aspect-ratio:2.5/3.5;max-width:86%;transform:translate(-50%,-50%);border:2px solid rgba(200,175,255,.9);border-radius:14px;box-shadow:0 0 0 999px rgba(10,4,20,.45),0 0 24px rgba(180,140,255,.6)}
+.viewer .hint{position:absolute;left:0;right:0;bottom:10px;text-align:center;color:#fff;font-size:.9rem;text-shadow:0 1px 3px #000;padding:0 12px}
+.file-btn{position:relative}
+.add-row>*{flex:1 1 120px}
+.file-btn input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.scan-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.scan-actions .big{grid-column:1/-1;min-height:60px;font-size:1.1rem}
+.status{font-size:.9rem;color:var(--muted);min-height:1.4em;margin:0}
+.status.err{color:var(--evil)}
+/* result */
+.result{display:grid;grid-template-columns:128px 1fr;gap:16px;align-items:start}
+.result>*{min-width:0}
+.result canvas{width:100%;height:auto;border-radius:8px;display:block;box-shadow:var(--glow)}
+.name{font:400 1.65rem/1.1 var(--display);margin:4px 0 0;word-break:break-word;letter-spacing:.01em}
+.name.pending{color:var(--muted);font:400 1.1rem var(--body)}
+.type-chip{display:inline-flex;align-items:center;gap:8px;font:700 .85rem var(--body);padding:5px 10px;border-radius:6px;width:fit-content;letter-spacing:.02em}
+.type-chip.good{background:var(--good-bg);color:var(--good)}
+.type-chip.evil{background:var(--evil-bg);color:var(--evil)}
+.type-chip.neutral{background:var(--site-bg);color:var(--site)}
+.conf{font:500 .76rem/1.4 var(--mono);color:var(--faint)}
+.crops{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center}
+.crops canvas{border-radius:6px;max-width:100%;height:auto;display:block;background:#fff}
+.crops .nm{width:100%}
+.alts{font-size:.88rem;color:var(--muted)}
+.alts b{color:var(--ink);font-weight:700}
+.links{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.links a{font:700 .9rem var(--body);text-decoration:none;border-radius:8px;padding:9px 12px;min-height:40px;display:inline-flex;align-items:center;border:1px solid var(--line-strong);color:var(--ink);background:var(--surface-2)}
+.links a:hover{border-color:var(--accent)}
+.links a.primary{background:linear-gradient(180deg,#c3a2ff,#9a6bff);border-color:transparent;color:var(--accent-ink);box-shadow:var(--glow)}
+.pick{font:700 .88rem var(--body);background:none;border:0;padding:2px 0;min-height:0;color:var(--accent);text-decoration:underline;text-underline-offset:3px;cursor:pointer;box-shadow:none}
+.teach{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.teach select{font:1rem var(--body);padding:10px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink);min-height:48px;flex:1 1 200px}
+.teach button{flex:0 0 auto}
+.samples{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.samples button{padding:0;min-height:0;border-radius:6px;overflow:hidden;aspect-ratio:3/4;background:var(--bg)}
+.samples img{width:100%;height:100%;object-fit:cover;display:block}
+.small{font-size:.86rem;color:var(--muted);margin:0}
+@media (max-width:420px){.result{grid-template-columns:104px 1fr}}
+[hidden]{display:none!important}
+details.more{border-top:1px solid var(--line);padding-top:12px}
+details.more>summary{cursor:pointer;color:var(--muted);font:700 .85rem var(--body);list-style:none;display:flex;align-items:center;gap:8px;min-height:32px}
+details.more>summary::before{content:"+";font:500 1rem var(--mono);color:var(--accent);width:1em}
+details.more[open]>summary::before{content:"–"}
+details.more>summary::-webkit-details-marker{display:none}
+details.more[open]>.more-body{display:flex;flex-direction:column;gap:12px;margin-top:10px}
+details.tools{background:transparent;border:1px dashed var(--line);border-radius:10px;padding:12px 16px}
+details.tools>summary{border:0}
+/* thumbnails */
+.thumb{display:inline-block;flex:0 0 auto;border-radius:3px;background-color:var(--line);background-repeat:no-repeat;box-shadow:0 0 0 1px rgba(0,0,0,.4)}
+.thumb.none{background:repeating-linear-gradient(135deg,var(--line) 0 4px,transparent 4px 8px)}
+/* empty state */
+#resultPanel.empty .result,#resultPanel.empty details.more{display:none}
+#resultPanel:not(.empty) .empty-note{display:none}
+.empty-note{display:flex;flex-direction:column;align-items:center;gap:6px;padding:26px 16px;border-radius:8px;text-align:center;color:var(--muted);background:repeating-linear-gradient(-45deg,transparent 0 10px,rgba(180,140,255,.04) 10px 20px)}
+.empty-note b{font:400 1.25rem var(--display);color:var(--ink)}
+.empty-card{width:46px;height:64px;border-radius:5px;border:1.5px dashed var(--line-strong);margin-bottom:6px}
+/* tabs */
+.tabs{display:flex;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:4px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.tabs button{flex:1;min-height:44px;border:0;border-radius:7px;background:none;font:400 1.08rem var(--display);letter-spacing:.04em;color:var(--muted)}
+.tabs button[aria-selected="true"]{background:var(--surface-2);color:var(--ink);box-shadow:var(--glow)}
+.tab-count{font:500 .78rem var(--mono);color:var(--gold)}
+.view{display:flex;flex-direction:column;gap:18px}
+/* trade */
+.side-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.side-head .small{margin:2px 0 0}
+.total,.money{font-family:var(--mono);font-weight:500;color:var(--gold);font-variant-numeric:tabular-nums}
+.total{font-size:1.45rem;line-height:1;text-shadow:0 0 16px rgba(242,196,109,.35)}
+.sum-line{font:500 .8rem var(--mono);color:var(--faint);word-break:break-word;min-height:1.2em}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.tiles .empty{grid-column:1/-1;color:var(--muted);font-size:.9rem;border:1.5px dashed var(--line);border-radius:8px;padding:18px;text-align:center}
+.tile{display:flex;flex-direction:row;align-items:center;gap:10px;text-align:left;min-height:0;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);cursor:pointer}
+.tile:hover{border-color:var(--evil);box-shadow:0 0 0 1px rgba(255,125,147,.35)}
+.tile .tt{display:flex;flex-direction:column;gap:1px;min-width:0}
+.tile .tn{font:700 .92rem/1.2 var(--body);word-break:break-word}
+.tile .ts{font-size:.76rem;color:var(--muted)}
+.tile .tp{font:500 .86rem var(--mono);color:var(--gold);margin-top:3px}
+.adder{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:12px}
+.q,.adder select{font:1rem var(--body);padding:12px;border-radius:8px;border:1px solid var(--line-strong);background:var(--bg);color:var(--ink);width:100%;min-height:48px}
+.q:focus{border-color:var(--accent);box-shadow:var(--glow-soft);outline:none}
+.results{display:flex;flex-direction:column;gap:4px}
+.results button{justify-content:space-between;min-height:44px;padding:6px 10px;text-align:left;gap:10px;background:transparent;border-color:transparent}
+.results button:hover{background:var(--surface-2);border-color:var(--line-strong)}
+.results button>span:last-child{font:500 .8rem var(--mono);color:var(--gold);white-space:nowrap}
+.results button .rtxt{flex:1;min-width:0;font:700 1rem var(--body);color:var(--ink);white-space:normal}
+.confirm{display:flex;flex-direction:column;gap:8px}
+.confirm-top{display:flex;gap:14px;align-items:center}
+.confirm-top .thumb{border-radius:6px;box-shadow:var(--glow)}
+.confirm-name{font:400 1.35rem/1.15 var(--display)}
+.trade-sum{background:linear-gradient(180deg,var(--surface-2),var(--surface));box-shadow:var(--glow-soft)}
+.trade-sum .vs{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:end}
+.trade-sum .vs .arrow{color:var(--faint);font:500 1.2rem var(--mono);padding-bottom:4px}
+.trade-sum .vs>div:last-child{text-align:right}
+.trade-sum .vs b{display:block;font:500 1.8rem/1.1 var(--mono);color:var(--gold);font-variant-numeric:tabular-nums}
+.verdict{margin:0;font:400 1.1rem var(--display)}
+.price-line{font:500 1.05rem var(--mono);color:var(--gold);margin-top:6px}
+.price-line .oos{color:var(--warn);font:700 .8rem var(--body)}
+.result-actions{display:flex;flex-direction:column;gap:10px}
+#resultPanel.empty .result-actions{display:none}
+.result-actions .links{margin-top:0}
+.trade-add{display:flex;gap:8px;flex-wrap:wrap}
+.trade-add button{flex:1 1 140px}
+.trade-add button{min-height:40px;padding:8px 12px;font-size:.9rem}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Redemption <span>Scanner</span></h1>
+    <p class="sub">Identify · price · trade</p>
+  </header>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button type="button" role="tab" id="tabScan" aria-selected="true" aria-controls="scanView">Scan</button>
+    <button type="button" role="tab" id="tabTrade" aria-selected="false" aria-controls="tradeView">Trade <span class="tab-count" id="tradeCount"></span></button>
+  </nav>
+  <div id="scanView" class="view" role="tabpanel" aria-labelledby="tabScan">
+
+  <section class="panel" aria-labelledby="scanH">
+    <h2 id="scanH" class="label">Scan a card</h2>
+    <div class="viewer" id="viewer" hidden>
+      <video id="video" playsinline muted autoplay></video>
+      <div class="guide" aria-hidden="true"></div>
+      <div class="hint">Keep the whole card in view, upright.</div>
+    </div>
+    <div class="scan-actions">
+      <label class="btn file-btn primary big" id="takeLbl"><input id="take" type="file" accept="image/*" capture="environment">Take a photo</label>
+      <button class="primary big" id="snap" type="button" hidden>Scan card</button>
+      <label class="btn file-btn"><input id="pick" type="file" accept="image/*">Upload</label>
+      <button id="startCam" type="button">Live camera</button>
+    </div>
+    <p class="status" id="status" role="status"></p>
+  </section>
+
+  <section class="panel empty" aria-labelledby="resH" id="resultPanel">
+    <h2 class="label" id="resH">Result</h2>
+    <div class="empty-note" id="emptyNote"><span class="empty-card" aria-hidden="true"></span><b>No card scanned yet</b><span>Take a photo of a card to see its name, type and price.</span></div>
+    <div class="result">
+      <canvas id="cardView" width="250" height="350" aria-label="Straightened card"></canvas>
+      <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+        <div>
+          <div class="label">Card name</div>
+          <div class="name pending" id="nameOut">Waiting for a card</div>
+          <div class="conf" id="nameConf"></div>
+          <div class="price-line" id="priceLine"></div>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:6px">Card type</div>
+          <div class="type-chip neutral" id="typeOut">–</div>
+          <div class="conf" id="typeConf" style="margin-top:4px"></div>
+        </div>
+        <div class="alts" id="alts"></div>
+      </div>
+    </div>
+    <div class="result-actions">
+      <div class="links" id="links"></div>
+      <div class="trade-add" id="tradeAdd" hidden><button type="button" id="addMine">+ Your side of trade</button><button type="button" id="addTheirs">+ Their side</button></div>
+      <div class="alts" id="others"></div>
+      <button type="button" id="askClaude" hidden style="min-height:40px;padding:8px 12px;font-size:.92rem;width:fit-content">Read name with Claude</button>
+    </div>
+    <details class="more"><summary>How it read this card</summary><div class="more-body">
+    <div class="crops">
+      <canvas id="boxView" width="125" height="92" aria-label="Icon box"></canvas>
+      <canvas id="nameView" class="nm" width="358" height="47" aria-label="Name strip as the reader sees it"></canvas>
+    </div>
+    <div class="teach">
+      <select id="teachSel" aria-label="Correct card type"></select>
+      <button type="button" id="teachBtn">Teach this</button>
+    </div>
+    <p class="small" id="teachInfo"></p>
+    </div></details>
+  </section>
+
+  <details class="more tools"><summary>Test photos and training</summary><div class="more-body">
+  <section aria-labelledby="sampH" style="display:flex;flex-direction:column;gap:10px">
+    <h2 id="sampH" class="label">Sample photos</h2>
+    <div class="samples" id="samples"></div>
+    <p class="small">These are the photos you sent. They are also the scanner's starting reference set, so they will always match. Your real test is a card that isn't in this list.</p>
+  </section>
+
+  <section aria-labelledby="trainH" style="display:flex;flex-direction:column;gap:10px">
+    <h2 id="trainH" class="label">Taught card types</h2>
+    <p class="small" id="trainCount">None yet. When the scanner gets a type wrong, pick the right one above and tap Teach this. It learns on this phone.</p>
+    <div class="row">
+      <button type="button" id="copyTrain">Copy training data</button>
+      <button type="button" id="clearTrain">Clear taught cards</button>
+    </div>
+    <p class="small" id="trainMsg"></p>
+  </section>
+  </div></details>
+  </div>
+
+  <div id="tradeView" class="view" role="tabpanel" aria-labelledby="tabTrade" hidden>
+    <section class="panel trade-sum" aria-live="polite">
+      <h2 class="label">Trade value</h2>
+      <div class="vs"><div><span class="small">You give</span><b id="vsMine">$0.00</b></div><span class="arrow" aria-hidden="true">⇄</span><div><span class="small">You get</span><b id="vsTheirs">$0.00</b></div></div>
+      <p class="verdict" id="verdict">Add cards to both sides to compare.</p>
+      <p class="small">Prices are Your Turn Games store prices from <span id="priceDate">the saved card list</span>.</p>
+    </section>
+    <section class="panel side" aria-labelledby="h-mine">
+      <div class="side-head"><div><h2 id="h-mine">Your cards</h2><p class="small">What you give</p></div><div class="total" id="total-mine">$0.00</div></div>
+      <div class="sum-line" id="sum-mine"></div>
+      <div class="tiles" id="tiles-mine"></div>
+      <div class="row add-row">
+        <button type="button" data-side="mine" class="add-search">Add by name</button>
+        <label class="btn file-btn"><input type="file" accept="image/*" capture="environment" data-side="mine" class="add-photo">Add by photo</label>
+      </div>
+      <div class="adder" id="adder-mine" hidden>
+        <div class="search-wrap" id="searchWrap-mine">
+          <label class="label" for="q-mine">Card name</label>
+          <input id="q-mine" type="search" autocomplete="off" placeholder="Start typing, e.g. Moses in Glory" class="q">
+          <div class="results" id="results-mine"></div>
+        </div>
+        <p class="status" id="adderStatus-mine" role="status"></p>
+        <div class="confirm" id="confirm-mine" hidden>
+          <div class="confirm-top"><div class="preview" id="preview-mine"></div><div class="confirm-name" id="confirmName-mine"></div></div>
+          <label class="label" for="print-mine">Printing</label>
+          <select id="print-mine"></select>
+          <div class="alts" id="confirmAlts-mine"></div>
+          <div class="row"><button type="button" class="primary" id="confirmAdd-mine">Add card</button><button type="button" id="confirmCancel-mine">Cancel</button></div>
+        </div>
+      </div>
+    </section>
+    <section class="panel side" aria-labelledby="h-theirs">
+      <div class="side-head"><div><h2 id="h-theirs">Their cards</h2><p class="small">What you get</p></div><div class="total" id="total-theirs">$0.00</div></div>
+      <div class="sum-line" id="sum-theirs"></div>
+      <div class="tiles" id="tiles-theirs"></div>
+      <div class="row add-row">
+        <button type="button" data-side="theirs" class="add-search">Add by name</button>
+        <label class="btn file-btn"><input type="file" accept="image/*" capture="environment" data-side="theirs" class="add-photo">Add by photo</label>
+      </div>
+      <div class="adder" id="adder-theirs" hidden>
+        <div class="search-wrap" id="searchWrap-theirs">
+          <label class="label" for="q-theirs">Card name</label>
+          <input id="q-theirs" type="search" autocomplete="off" placeholder="Start typing, e.g. Moses in Glory" class="q">
+          <div class="results" id="results-theirs"></div>
+        </div>
+        <p class="status" id="adderStatus-theirs" role="status"></p>
+        <div class="confirm" id="confirm-theirs" hidden>
+          <div class="confirm-top"><div class="preview" id="preview-theirs"></div><div class="confirm-name" id="confirmName-theirs"></div></div>
+          <label class="label" for="print-theirs">Printing</label>
+          <select id="print-theirs"></select>
+          <div class="alts" id="confirmAlts-theirs"></div>
+          <div class="row"><button type="button" class="primary" id="confirmAdd-theirs">Add card</button><button type="button" id="confirmCancel-theirs">Cancel</button></div>
+        </div>
+      </div>
+    </section>
+    <div class="row"><button type="button" id="clearTrade">Clear trade</button></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script>
+"use strict";
+/* ---------- card types ---------- */
+const TYPES = {
+  good_character:{label:"Good Character",icon:"Golden cross",side:"good"},
+  evil_character:{label:"Evil Character",icon:"Green dragon",side:"evil"},
+  good_enhancement:{label:"Good Enhancement",icon:"Bible",side:"good"},
+  evil_enhancement:{label:"Evil Enhancement",icon:"Skull",side:"evil"},
+  good_dominant:{label:"Good Dominant",icon:"Lamb",side:"good"},
+  evil_dominant:{label:"Evil Dominant",icon:"Grim reaper",side:"evil"},
+  good_fortress:{label:"Good Fortress",icon:"Building, light rainbow",side:"good"},
+  evil_fortress:{label:"Evil Fortress",icon:"Building, dark rainbow",side:"evil"},
+  site:{label:"Site",icon:"Pyramids",side:"neutral"},
+};
+const SAMPLES = [
+  ["good_character","sample-good_character.jpg"],["evil_character","sample-evil_character.jpg"],
+  ["good_enhancement","sample-good_enhancement.jpg"],["evil_enhancement","sample-evil_enhancement.jpg"],
+  ["good_dominant","sample-good_dominant.jpg"],["evil_dominant","sample-evil_dominant.jpg"],
+  ["good_fortress","sample-fortress.jpg"],["evil_fortress","sample-evil_fortress.jpg"],["site","sample-site.jpg"],
+];
+/* Card layout, measured on a straightened card 500 x 700 (inner colored frame). */
+const CW=500, CH=700;
+const BOX={x:0,y:0,w:125,h:92};
+const NAME={x:130,y:6,w:358,h:47};
+
+/* ---------- small helpers ---------- */
+const $=id=>document.getElementById(id);
+function setStatus(t,err){const s=$("status");s.textContent=t||"";s.classList.toggle("err",!!err)}
+function lsGet(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}
+function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}
+function loadImage(src){return new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>rej(new Error("Could not open that image"));i.src=src})}
+function canvasFrom(src,maxDim){
+  const w=src.videoWidth||src.naturalWidth||src.width, h=src.videoHeight||src.naturalHeight||src.height;
+  const s=Math.min(1,maxDim/Math.max(w,h));
+  const c=document.createElement("canvas");c.width=Math.round(w*s);c.height=Math.round(h*s);
+  c.getContext("2d").drawImage(src,0,0,c.width,c.height);return c;
+}
+function ctx2d(c){return c.getContext("2d",{willReadFrequently:true})}
+
+/* ---------- 1. find the card ---------- */
+function percentile(arr,p){const a=Array.from(arr).sort((x,y)=>x-y);return a[Math.min(a.length-1,Math.floor(p*a.length))]}
+function fitLine(pts){ // fit v = a*u + b, with outlier rejection
+  let P=pts.slice();let a=0,b=0;
+  for(let it=0;it<3;it++){
+    const n=P.length;if(n<5)break;
+    let su=0,sv=0,suu=0,suv=0;for(const [u,v] of P){su+=u;sv+=v;suu+=u*u;suv+=u*v}
+    const d=n*suu-su*su;if(Math.abs(d)<1e-9)break;
+    a=(n*suv-su*sv)/d;b=(sv-a*su)/n;
+    const r=P.map(([u,v])=>Math.abs(v-(a*u+b)));const med=percentile(r,0.5);
+    const lim=Math.max(2,med*3);P=P.filter((_,i)=>r[i]<lim);
+  }
+  return [a,b];
+}
+function maxFilter(src,W,H,r){ // separable sliding max, window 2r+1
+  const tmp=new Float32Array(W*H),out=new Float32Array(W*H);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){let m=0;const a=Math.max(0,x-r),b=Math.min(W-1,x+r);for(let k=a;k<=b;k++){const v=src[y*W+k];if(v>m)m=v}tmp[y*W+x]=m}
+  for(let x=0;x<W;x++)for(let y=0;y<H;y++){let m=0;const a=Math.max(0,y-r),b=Math.min(H-1,y+r);for(let k=a;k<=b;k++){const v=tmp[k*W+x];if(v>m)m=v}out[y*W+x]=m}
+  return out;
+}
+function boxBlur(src,W,H,r){
+  const tmp=new Float32Array(W*H),out=new Float32Array(W*H);
+  for(let y=0;y<H;y++){let s=0,n=0;for(let x=-r;x<W;x++){if(x+r<W){s+=src[y*W+x+r];n++}if(x-r-1>=0){s-=src[y*W+x-r-1];n--}if(x>=0)tmp[y*W+x]=s/n}}
+  for(let x=0;x<W;x++){let s=0,n=0;for(let y=-r;y<H;y++){if(y+r<H){s+=tmp[(y+r)*W+x];n++}if(y-r-1>=0){s-=tmp[(y-r-1)*W+x];n--}if(y>=0)out[y*W+x]=s/n}}
+  return out;
+}
+function findFrame(mask,SW,SH){ // mask: 1 = not white. Returns {quad (400-scale), sc} or null
+  const N=SW*SH,lab=new Int32Array(N),stack=new Int32Array(N);let nl=0;const comps=[];
+  for(let i=0;i<N;i++){
+    if(!mask[i]||lab[i])continue;nl++;let sp2=0;stack[sp2++]=i;lab[i]=nl;
+    let x0=SW,y0=SH,x1=0,y1=0,area=0;
+    while(sp2){const p=stack[--sp2];const x=p%SW,y=(p/SW)|0;area++;
+      if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;
+      for(let dy=-1;dy<=1;dy++){const yy=y+dy;if(yy<0||yy>=SH)continue;
+        for(let dx=-1;dx<=1;dx++){const xx=x+dx;if(xx<0||xx>=SW)continue;const q=yy*SW+xx;
+          if(mask[q]&&!lab[q]){lab[q]=nl;stack[sp2++]=q}}}}
+    comps.push({id:nl,x0,y0,x1,y1,area});
+  }
+  let best=null;
+  for(const k of comps){const w=k.x1-k.x0+1,h=k.y1-k.y0+1;
+    if(w*h<0.012*N||w<24)continue; if(w>=SW-2&&h>=SH-2)continue; if(Math.abs(w/h-0.716)>0.12)continue;
+    const fill=k.area/(w*h); if(fill<0.35)continue; // a card frame is mostly solid
+    const sc=-Math.abs(w/h-0.716)*5+(w*h)/N+fill*0.5;
+    if(!best||sc>best.sc)best={...k,w,h,sc};}
+  if(!best)return null;
+  const id=best.id,L=[],R=[],T=[],B=[];
+  for(let y=Math.floor(best.y0+best.h*0.1);y<best.y0+best.h*0.9;y++){
+    let a=-1,b=-1;for(let x=best.x0;x<=best.x1;x++){if(lab[y*SW+x]===id){if(a<0)a=x;b=x}}
+    if(a<0)continue; R.push([y,b]); if(y>best.y0+best.h*0.3)L.push([y,a]);}
+  for(let x=Math.floor(best.x0+best.w*0.1);x<best.x0+best.w*0.9;x++){
+    let a=-1,b=-1;for(let y=best.y0;y<=best.y1;y++){if(lab[y*SW+x]===id){if(a<0)a=y;b=y}}
+    if(a<0)continue; B.push([x,b]); if(x>best.x0+best.w*0.4)T.push([x,a]);}
+  if(L.length<10||R.length<10||T.length<10||B.length<10)return null;
+  const [la,lb]=fitLine(L),[ra,rb]=fitLine(R),[ta,tb]=fitLine(T),[ba,bb]=fitLine(B);
+  const inter=(xa,xb,ya,yb)=>{const y=(ya*xb+yb)/(1-ya*xa);return [xa*y+xb,y]};
+  const q=[inter(la,lb,ta,tb),inter(ra,rb,ta,tb),inter(ra,rb,ba,bb),inter(la,lb,ba,bb)];
+  const wq=(Math.hypot(q[1][0]-q[0][0],q[1][1]-q[0][1])+Math.hypot(q[2][0]-q[3][0],q[2][1]-q[3][1]))/2;
+  const hq=(Math.hypot(q[3][0]-q[0][0],q[3][1]-q[0][1])+Math.hypot(q[2][0]-q[1][0],q[2][1]-q[1][1]))/2;
+  if(!(Math.abs(wq/hq-0.705)<0.08))return null;
+  return {quad:q,sc:best.sc-Math.abs(wq/hq-0.705)*5};
+}
+function detectCard(src){ // src canvas -> 4 corners [tl,tr,br,bl] in src coords, or null
+  const SW=400, s=SW/src.width, SH=Math.round(src.height*s);
+  const c=document.createElement("canvas");c.width=SW;c.height=SH;
+  const g=ctx2d(c);g.drawImage(src,0,0,SW,SH);
+  const d=g.getImageData(0,0,SW,SH).data, N=SW*SH;
+  const mn=new Uint8Array(N), sp=new Uint8Array(N), mx=new Float32Array(N);
+  for(let i=0;i<N;i++){const r=d[i*4],gg=d[i*4+1],b=d[i*4+2];const lo=Math.min(r,gg,b),hi=Math.max(r,gg,b);mn[i]=lo;sp[i]=hi-lo;mx[i]=hi}
+  const tries=[];
+  // 1) even lighting: one brightness cut for the whole photo
+  const thr=Math.max(110,Math.min(200,percentile(mn,0.98)*0.78));
+  tries.push(i=>(mn[i]>thr&&sp[i]<45)?0:1);
+  // 2) uneven lighting / glare: compare each pixel with the brightest nearby pixel instead
+  const lm=boxBlur(maxFilter(mx,SW,SH,30),SW,SH,12);
+  for(const k of [0.8,0.7])tries.push(i=>(mx[i]>40&&mx[i]>=k*lm[i]&&sp[i]<0.25*mx[i])?0:1);
+  let best=null;
+  for(const f of tries){const mask=new Uint8Array(N);for(let i=0;i<N;i++)mask[i]=f(i);
+    const r=findFrame(mask,SW,SH);if(r&&(!best||r.sc>best.sc))best=r;}
+  return best?best.quad.map(([x,y])=>[x/s,y/s]):null;
+}
+
+/* ---------- 2. straighten it ---------- */
+function solve(A,b){const n=b.length;for(let i=0;i<n;i++){let m=i;for(let r=i+1;r<n;r++)if(Math.abs(A[r][i])>Math.abs(A[m][i]))m=r;
+  [A[i],A[m]]=[A[m],A[i]];[b[i],b[m]]=[b[m],b[i]];for(let r=i+1;r<n;r++){const f=A[r][i]/A[i][i];for(let c=i;c<n;c++)A[r][c]-=f*A[i][c];b[r]-=f*b[i]}}
+  const x=new Array(n);for(let i=n-1;i>=0;i--){let s=b[i];for(let c=i+1;c<n;c++)s-=A[i][c]*x[c];x[i]=s/A[i][i]}return x}
+function homography(from,to){const A=[],b=[];for(let i=0;i<4;i++){const [x,y]=from[i],[u,v]=to[i];
+  A.push([x,y,1,0,0,0,-u*x,-u*y]);b.push(u);A.push([0,0,0,x,y,1,-v*x,-v*y]);b.push(v)}
+  const h=solve(A,b);return [...h,1]}
+function warp(src,quad,W,H){
+  const out=document.createElement("canvas");out.width=W;out.height=H;
+  const Hm=homography([[0,0],[W,0],[W,H],[0,H]],quad);
+  const sd=ctx2d(src).getImageData(0,0,src.width,src.height).data,SW=src.width,SH=src.height;
+  const og=ctx2d(out),od=og.createImageData(W,H),o=od.data;
+  for(let v=0;v<H;v++)for(let u=0;u<W;u++){
+    const uu=u+0.5,vv=v+0.5,z=Hm[6]*uu+Hm[7]*vv+1;
+    let x=(Hm[0]*uu+Hm[1]*vv+Hm[2])/z-0.5,y=(Hm[3]*uu+Hm[4]*vv+Hm[5])/z-0.5;
+    x=Math.max(0,Math.min(SW-1.001,x));y=Math.max(0,Math.min(SH-1.001,y));
+    const x0=x|0,y0=y|0,fx=x-x0,fy=y-y0,i00=(y0*SW+x0)*4,i10=i00+4,i01=i00+SW*4,i11=i01+4,k=(v*W+u)*4;
+    for(let ch=0;ch<3;ch++)o[k+ch]=(sd[i00+ch]*(1-fx)+sd[i10+ch]*fx)*(1-fy)+(sd[i01+ch]*(1-fx)+sd[i11+ch]*fx)*fy;
+    o[k+3]=255;}
+  og.putImageData(od,0,0);return out;
+}
+
+/* ---------- 3. icon features ---------- */
+const FW=64,FH=48,CELL=8;
+function boxPixels(card,dx,dy,sc){ // card: 500x700 canvas
+  const c=document.createElement("canvas");c.width=FW;c.height=FH;const g=ctx2d(c);
+  const w=BOX.w*sc,h=BOX.h*sc;g.imageSmoothingQuality="high";
+  g.drawImage(card,BOX.x+dx+(BOX.w-w)/2,BOX.y+dy+(BOX.h-h)/2,w,h,0,0,FW,FH);
+  return g.getImageData(0,0,FW,FH).data;
+}
+function hog(px){
+  const L=new Float32Array(FW*FH);for(let i=0;i<FW*FH;i++)L[i]=(0.299*px[i*4]+0.587*px[i*4+1]+0.114*px[i*4+2])/255;
+  const cx=FW/CELL,cy=FH/CELL,NB=9,cells=new Float32Array(cx*cy*NB);
+  for(let y=1;y<FH-1;y++)for(let x=1;x<FW-1;x++){
+    const gx=L[y*FW+x+1]-L[y*FW+x-1],gy=L[(y+1)*FW+x]-L[(y-1)*FW+x];const m=Math.hypot(gx,gy);if(m<1e-4)continue;
+    let a=Math.atan2(gy,gx);if(a<0)a+=Math.PI;let f=a/Math.PI*NB-0.5;let b0=Math.floor(f);const t=f-b0;
+    const b1=(b0+1+NB)%NB;b0=(b0+NB)%NB;const ci=((y/CELL|0)*cx+(x/CELL|0))*NB;
+    cells[ci+b0]+=m*(1-t);cells[ci+b1]+=m*t;}
+  const out=[];
+  for(let by=0;by<cy-1;by++)for(let bx=0;bx<cx-1;bx++){
+    const blk=[];for(const [ox,oy] of [[0,0],[1,0],[0,1],[1,1]]){const ci=((by+oy)*cx+bx+ox)*NB;for(let k=0;k<NB;k++)blk.push(cells[ci+k])}
+    let n=Math.sqrt(blk.reduce((s,v)=>s+v*v,0)+0.01);for(const v of blk)out.push(Math.min(0.25,v/n));
+    // re-normalise after clipping (HOG L2-Hys)
+    const st=out.length-36;n=0;for(let k=st;k<out.length;k++)n+=out[k]*out[k];n=Math.sqrt(n+1e-6);for(let k=st;k<out.length;k++)out[k]/=n;}
+  return Float32Array.from(out);
+}
+function colorFeats(px){
+  const hb=new Float32Array(12);let nsat=0,dark=0,white=0,lum=0;const N=FW*FH;
+  for(let i=0;i<N;i++){const r=px[i*4]/255,g=px[i*4+1]/255,b=px[i*4+2]/255;const mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn;
+    const l=0.299*r+0.587*g+0.114*b;lum+=l;if(l<0.25)dark++;if(mn>0.78&&d<0.15)white++;
+    const s=mx?d/mx:0;if(s>0.2&&mx>0.35&&d>0){let h=mx===r?((g-b)/d)%6:mx===g?(b-r)/d+2:(r-g)/d+4;h=(h*60+360)%360;hb[Math.floor(h/30)%12]++;nsat++}}
+  let ent=0;if(nsat>N*0.05){for(const v of hb){if(v>0){const p=v/nsat;ent-=p*Math.log(p)}}ent/=Math.log(12)}
+  return [ent,dark/N,white/N,lum/N];
+}
+function features(card){const px=boxPixels(card,0,0,1);return {hog:hog(px),col:colorFeats(px)}}
+function dist(a,b){let s=0;for(let i=0;i<a.length;i++){const d=a[i]-b[i];s+=d*d}return Math.sqrt(s/ (a.length/36))}
+const COLW=[0.9,1.2,0.8,0.8];
+function colDist(a,b){let s=0;for(let i=0;i<4;i++)s+=COLW[i]*Math.abs(a[i]-b[i]);return s}
+
+let REFS=[]; // {label, hog, col, src:'builtin'|'taught'}
+function classify(card){
+  // try small shifts/scales of the box crop to absorb alignment error; keep best per reference
+  const variants=[];
+  for(const sc of [0.94,1,1.06])for(const dy of [-5,0,5])for(const dx of [-6,0,6]){const px=boxPixels(card,dx,dy,sc);variants.push(hog(px))}
+  const col=colorFeats(boxPixels(card,0,0,1));
+  const perType={};
+  for(const r of REFS){let best=1e9;for(const h of variants){const d=dist(h,r.hog);if(d<best)best=d}
+    const total=best+colDist(col,r.col);if(!(r.label in perType)||total<perType[r.label])perType[r.label]=total}
+  const ranked=Object.entries(perType).sort((a,b)=>a[1]-b[1]);
+  let [top,d1]=ranked[0];const d2=ranked[1]?ranked[1][1]:d1*2;
+  // building icon: alignment comes from how light the rainbow is
+  const margin=(d2-d1)/d2;
+  return {type:top,margin,ranked,col};
+}
+
+/* ---------- 4. read the name ---------- */
+function otsu(vals,lo,hi){
+  const B=256,h=new Float64Array(B);for(const v of vals){h[Math.max(0,Math.min(B-1,Math.floor((v-lo)/(hi-lo)*B)))]++}
+  let tot=0,sum=0;for(let i=0;i<B;i++){tot+=h[i];sum+=i*h[i]}
+  let w0=0,m0=0,best=0,bi=0;for(let i=0;i<B;i++){w0+=h[i];m0+=i*h[i];const w1=tot-w0;if(!w0||!w1)continue;
+    const d=m0/w0-(sum-m0)/w1,v=w0*w1*d*d;if(v>best){best=v;bi=i}}
+  return lo+(bi+1)*(hi-lo)/B;
+}
+const NAME_MODES=["A","B","C","D"];
+function nameBinary(cardHi,k,mode="A"){ // cardHi is k*500 x k*700
+  const S=3,w=NAME.w*S,h=NAME.h*S;
+  const c=document.createElement("canvas");c.width=w;c.height=h;const g=ctx2d(c);g.imageSmoothingQuality="high";
+  g.drawImage(cardHi,NAME.x*k,NAME.y*k,NAME.w*k,NAME.h*k,0,0,w,h);
+  const d=g.getImageData(0,0,w,h).data,N=w*h,score=new Float32Array(N);
+  for(let i=0;i<N;i++){const r=d[i*4],gg=d[i*4+1],b=d[i*4+2];const mn=Math.min(r,gg,b),mx=Math.max(r,gg,b);score[i]=mn-0.6*(mx-mn)}
+  // "whiteness" threshold: four variants, the reader keeps whichever it is most sure about
+  const smp=score.filter((_,i)=>i%5===0);let thr;
+  if(mode==="A")thr=Math.max(140,percentile(smp,0.97)*0.75);
+  else if(mode==="B")thr=Math.max(100,otsu(smp,-160,256));
+  else if(mode==="C")thr=Math.max(100,percentile(smp,0.995)*0.62);
+  else thr=Math.max(100,percentile(smp,0.995)*0.75);
+  const m=new Uint8Array(N);for(let i=0;i<N;i++)m[i]=score[i]>thr?1:0;
+  // keep bright shapes that are enclosed (letters), drop anything touching the strip edge
+  const lab=new Int32Array(N),stack=new Int32Array(N),keep=[false];let nl=0;
+  for(let i=0;i<N;i++){if(!m[i]||lab[i])continue;nl++;let sp=0;stack[sp++]=i;lab[i]=nl;let x0=w,y0=h,x1=0,y1=0,a=0;
+    while(sp){const p=stack[--sp],x=p%w,y=(p/w)|0;a++;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;
+      for(let dy=-1;dy<=1;dy++){const yy=y+dy;if(yy<0||yy>=h)continue;for(let dx=-1;dx<=1;dx++){const xx=x+dx;if(xx<0||xx>=w)continue;const q=yy*w+xx;if(m[q]&&!lab[q]){lab[q]=nl;stack[sp++]=q}}}}
+    keep.push(!(x0===0||y0===0||x1>=w-1||y1>=h-1)&&a>=30&&(y1-y0+1)>=h*0.12);}
+  const P=20,out=document.createElement("canvas");out.width=w+2*P;out.height=h+2*P;const og=ctx2d(out);
+  og.fillStyle="#fff";og.fillRect(0,0,out.width,out.height);const od=og.getImageData(P,P,w,h),o=od.data;
+  for(let i=0;i<N;i++){const v=keep[lab[i]]?0:255;o[i*4]=o[i*4+1]=o[i*4+2]=v;o[i*4+3]=255}
+  og.putImageData(od,P,P);return out;
+}
+/* On-device reader (Tesseract). Starts warming up as soon as the page loads; every step has a time limit
+   so a blocked or stuck download can never leave the page waiting. */
+let workerP=null,ocrError="",onOcrProgress=null;
+function withTimeout(p,ms,what){return Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error(what+" took too long")),ms))])}
+const OCR_STEPS={"loading tesseract core":"downloading reader","initializing tesseract":"starting reader","loading language traineddata":"loading English","initializing api":"starting reader","recognizing text":"reading"};
+function getWorker(){if(!workerP)workerP=initWorker();return workerP}
+async function initWorker(){
+  if(!window.Tesseract){ocrError="The text reader didn't download.";return null}
+  try{new WebAssembly.Module(new Uint8Array([0,97,115,109,1,0,0,0]))}
+  catch(e){ocrError="This page isn't allowed to run the on-phone text reader.";return null}
+  const opts={cacheMethod:"none",gzip:false,langPath:new URL(".",document.baseURI).href.replace(/\/$/,""),
+    workerPath:"https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js",
+    corePath:"https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1",
+    logger:m=>{if(onOcrProgress)onOcrProgress(m)},errorHandler:e=>console.warn("reader error",e)};
+  try{
+    const w=await withTimeout(Tesseract.createWorker("eng",1,opts),45000,"Starting the text reader");
+    await withTimeout(w.setParameters({tessedit_pageseg_mode:"7",
+      tessedit_char_whitelist:"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 '-,.:()&!?"}),10000,"Setting up the reader");
+    return w;
+  }catch(e){console.warn("OCR unavailable",e);ocrError=(e&&e.message?e.message+". ":"")+"The on-phone text reader couldn't start.";return null}
+}
+/* Fallback: ask Claude to read the name strip (only inside Claude, after the viewer allows it). */
+let samplerP=null;
+function getSampler(){if(!samplerP)samplerP=(window.claude&&window.claude.use?window.claude.use("sample"):Promise.resolve(null))
+  .then(async s=>{if(!s)return null;const l=await s.limits().catch(()=>null);return l&&l.images?s:null}).catch(()=>null);return samplerP}
+async function askClaude(){
+  if(!current||!current.nameColor)return;
+  const s=await getSampler();if(!s){setStatus("Reading with Claude isn't available here.",true);return}
+  const id=scanId,btn=$("askClaude"),nameEl=$("nameOut");btn.disabled=true;setStatus("Asking Claude to read the name…");
+  try{
+    const blob=await new Promise(r=>current.nameColor.toBlob(r,"image/png"));
+    const r=await s("This image is the title bar cropped from the top of a Redemption trading card (a Bible-based card game). Reply with only the card's name exactly as printed, with no quotes or other words. If you cannot read it, reply UNREADABLE.",{images:[blob],modelTier:"quick"});
+    if(id!==scanId)return;
+    const name=cleanName(r.text||"");
+    if(!name||/UNREADABLE/i.test(name)){setStatus("Claude couldn't read this one either. Try a sharper photo.",true);return}
+    showMatch([name],name,"read by Claude");setStatus("Done");
+  }catch(e){setStatus(e&&e.code==="not_granted"?"Reading with Claude wasn't allowed.":"Claude couldn't read it: "+(e&&e.message||"unknown error"),true)}
+  finally{btn.disabled=false}
+}
+/* Dictionary clean-up: swap a misread word for the closest real word, where letters this font gets
+   confused (r/f, i/l, e/c...) cost less to swap. Word list = the reader's own English dictionary. */
+let LEX=null,LEXLEN=null;
+function loadLexicon(){
+  return fetch("words.txt").then(r=>r.ok?r.text():"").then(t=>{if(!t)return;const a=t.split("\n");LEX=new Set(a);LEXLEN=new Map();
+    for(const w of a){if(!LEXLEN.has(w.length))LEXLEN.set(w.length,[]);LEXLEN.get(w.length).push(w)}}).catch(()=>{});
+}
+const SHORT=new Set("a i of in on at to by an as is be my no up us we he me or so go do it ii".split(" "));
+const SUB=new Map();
+for(const p of "rf il lt it ec oc ao hb nu nr gq s5 o0 l1 i1 eo ae uv yv ft mn ij da rt".split(" ")){SUB.set(p,0.4);SUB.set(p[1]+p[0],0.4)}
+function wdist(a,b,cap){
+  const n=a.length,m=b.length,del=ch=>"il1j'.".includes(ch)?0.5:1;let prev=new Float32Array(m+1);for(let j=0;j<=m;j++)prev[j]=j;
+  for(let i=1;i<=n;i++){const cur=new Float32Array(m+1);cur[0]=prev[0]+del(a[i-1]);let best=cur[0];
+    for(let j=1;j<=m;j++){const c=a[i-1]===b[j-1]?0:(SUB.get(a[i-1]+b[j-1])||1);
+      cur[j]=Math.min(prev[j]+del(a[i-1]),cur[j-1]+1,prev[j-1]+c);if(cur[j]<best)best=cur[j]}
+    if(best>cap)return 99;prev=cur}
+  return prev[m];
+}
+function fixWord(w){
+  const core=w.replace(/[^A-Za-z']/g,""),lw=core.toLowerCase();
+  if(!LEX)return [w,0];
+  if(SHORT.has(lw)||(lw.length>=3&&LEX.has(lw)))return [w,0];
+  if(lw.length<3)return [w,1];
+  const cap=lw.length<=5?1.0:1.4;let best=null;
+  for(const L of [lw.length-1,lw.length,lw.length+1])for(const c of (LEXLEN.get(L)||[])){
+    const d=wdist(lw,c,cap);if(d<=cap&&(!best||d<best[0]))best=[d,c]}
+  if(!best)return [w,1.5];
+  let c=best[1];if(/^[A-Z]/.test(core))c=c[0].toUpperCase()+c.slice(1);
+  return [c,best[0]];
+}
+/* Card list from Your Turn Games: snap the reading to a real card and link to it. */
+let CARDS=null;
+const YTG="https://www.yourturngames.biz";
+const TYPE_CODE={good_character:"H",evil_character:"EC",good_enhancement:"GE",evil_enhancement:"EE",good_dominant:"D",evil_dominant:"D",good_fortress:"F",evil_fortress:"F",site:"S"};
+const CODE_LABEL={H:"Hero",EC:"Evil Character",GE:"Good Enhancement",EE:"Evil Enhancement",F:"Fortress",D:"Dominant",S:"Site",LS:"Lost Soul",A:"Artifact",CU:"Curse",CO:"Covenant",CI:"City"};
+function normName(t){return (t||"").toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim()}
+function loadCards(){return fetch("cards.json").then(r=>r.json()).then(j=>{const a=Array.isArray(j)?j:j.cards;if(j.thumbs)THUMBS=j.thumbs;if(j.pricesFetched){const el=$("priceDate");if(el)el.textContent=new Date(j.pricesFetched).toLocaleDateString(undefined,{month:"long",day:"numeric",year:"numeric"})}CARDS=a.map(([n,t,p])=>({n,norm:normName(n),t:new Set(t?t.split("."):[]),p}))}).catch(e=>console.warn("card list",e))}
+function matchCard(readings,typeKey,typeSure){
+  if(!CARDS)return [];
+  const rs=[...new Set(readings.map(normName))].filter(r=>r.replace(/ /g,"").length>=3);
+  if(!rs.length)return [];
+  const code=TYPE_CODE[typeKey],out=[];
+  for(const c of CARDS){let best=9;
+    for(const r of rs){const L=Math.max(r.length,c.norm.length);if(Math.abs(r.length-c.norm.length)>Math.max(4,L*0.5))continue;
+      const d=wdist(r,c.norm,L*0.55)/L;if(d<best)best=d}
+    if(best>0.55)continue;
+    out.push({c,d:best,s:best-(code&&c.t.has(code)?(typeSure?0.08:0.04):0)});}
+  return out.sort((a,b)=>a.s-b.s).slice(0,4);
+}
+function cardTypeLabel(c){return [...c.t].map(k=>CODE_LABEL[k]||k).join(" / ")}
+function showMatch(readings,rawShown,source){
+  const nameEl=$("nameOut"),links=$("links"),others=$("others");links.innerHTML="";others.innerHTML="";$("priceLine").innerHTML="";$("tradeAdd").hidden=true;if(current)current.match=null;
+  const res=current&&current.res,ms=matchCard(readings,res&&res.type,res&&res.margin>0.45);
+  const top=ms[0],sure=top&&top.d<=0.3,maybe=top&&!sure&&top.d<=0.45;
+  if(top&&(sure||maybe)){
+    nameEl.className="name";nameEl.textContent=top.c.n;
+    $("nameConf").textContent=(sure?"Matched to the card list":"Best guess from the card list")+(rawShown&&normName(rawShown)!==top.c.norm?` · read as “${rawShown}”`:"")+(source?` · ${source}`:"");
+    top.c.p.forEach(([set,h,price],i)=>{const a=document.createElement("a");a.href=`${YTG}/products/${encodeURIComponent(h)}`;a.target="_blank";a.rel="noopener";
+      a.className=i===0?"primary":"";a.textContent=(i===0?"View on Your Turn Games":"")+(set?(i===0?" · ":"")+set:"")+(price!=null?" · "+money(price):"");links.appendChild(a)});
+    $("priceLine").innerHTML=priceSummary(top.c);
+    current.match=top.c;$("tradeAdd").hidden=false;
+    // type cross-check against the card list
+    const code=res&&TYPE_CODE[res.type];
+    if(code&&top.c.t.size&&!top.c.t.has(code)){
+      const chip=$("typeOut");chip.textContent=cardTypeLabel(top.c);const ev=[...top.c.t].some(k=>k==="EC"||k==="EE"),gd=[...top.c.t].some(k=>k==="H"||k==="GE");chip.className="type-chip "+(ev&&!gd?"evil":gd&&!ev?"good":"neutral");
+      $("typeConf").textContent=`From the card list · the icon looked like ${TYPES[res.type].label}`;
+    }
+  }else{
+    nameEl.className=rawShown?"name":"name pending";nameEl.textContent=rawShown||"Couldn't read the name";
+    $("nameConf").textContent=CARDS?"No close match in the card list":"Card list didn't load";
+    if(rawShown){const a=document.createElement("a");a.href=`${YTG}/search?q=${encodeURIComponent(rawShown)}`;a.target="_blank";a.rel="noopener";a.textContent="Search Your Turn Games";links.appendChild(a)}
+  }
+  const alt=ms.filter(m=>m!==top||!(sure||maybe)).slice(0,3);
+  if(alt.length){others.append("Not it? ");alt.forEach((m,i)=>{const b=document.createElement("button");b.type="button";b.className="pick";b.textContent=m.c.n;
+    b.onclick=()=>showMatch([m.c.n],rawShown,"picked by you");others.append(b);if(i<alt.length-1)others.append(", ")})}
+}
+function pickName(cands){ // cands: [{name,conf}] from each image variant
+  const letters=t=>t.replace(/[^A-Za-z]/g,"").length;
+  const mx=Math.max(...cands.map(c=>letters(c.name)));
+  const pool=cands.filter(c=>letters(c.name)>=0.7*mx);
+  let best=null;
+  for(const c of pool){const fixed=c.name.split(" ").filter(Boolean).map(fixWord);
+    const pen=fixed.reduce((s,f)=>s+f[1],0),score=c.conf*(letters(c.name)/Math.max(1,mx))-20*pen;
+    const out=fixed.map(f=>f[0]).join(" ");
+    if(!best||score>best.score)best={...c,score,fixedName:out,changed:out!==c.name};}
+  return best;
+}
+function cleanName(t){return t.replace(/[\r\n]+/g," ").replace(/\s{2,}/g," ").replace(/^[^A-Za-z0-9(]+|[^A-Za-z0-9)!?]+$/g,"").trim()}
+
+/* ---------- pipeline ---------- */
+function whiteBalance(src){ // make the brightest whites neutral (fixes warm/cool room light); edits src in place
+  const g=ctx2d(src),im=g.getImageData(0,0,src.width,src.height),d=im.data,N=src.width*src.height;
+  const step=Math.max(1,Math.floor(N/40000)),ch=[[],[],[]];
+  for(let i=0;i<N;i+=step){ch[0].push(d[i*4]);ch[1].push(d[i*4+1]);ch[2].push(d[i*4+2])}
+  const p=ch.map(a=>Math.max(1,percentile(a,0.99))),top=Math.max(...p);
+  const gain=p.map(v=>Math.min(1.4,top/v));
+  if(Math.max(...gain)<1.03)return src;
+  for(let i=0;i<N;i++){d[i*4]=Math.min(255,d[i*4]*gain[0]);d[i*4+1]=Math.min(255,d[i*4+1]*gain[1]);d[i*4+2]=Math.min(255,d[i*4+2]*gain[2])}
+  g.putImageData(im,0,0);return src;
+}
+function srcSize(src){return [src.videoWidth||src.naturalWidth||src.width,src.videoHeight||src.naturalHeight||src.height]}
+function cropFrom(src,x,y,w,h,maxDim){
+  const s=Math.min(1,maxDim/Math.max(w,h)),c=document.createElement("canvas");c.width=Math.round(w*s);c.height=Math.round(h*s);
+  const g=c.getContext("2d");g.imageSmoothingQuality="high";g.drawImage(src,x,y,w,h,0,0,c.width,c.height);return {c,s};
+}
+/* Find the card anywhere in the photo, then "zoom in": cut that area out of the full-resolution
+   photo and find the edges again there, so small or off-centre cards still get full detail. */
+function prepareCard(src){
+  const [W,H]=srcSize(src);
+  const coarse=cropFrom(src,0,0,W,H,1200);whiteBalance(coarse.c);
+  const q0=detectCard(coarse.c);
+  let work,quad=null;
+  if(q0){
+    const xs=q0.map(p=>p[0]/coarse.s),ys=q0.map(p=>p[1]/coarse.s);
+    const bw=Math.max(...xs)-Math.min(...xs),bh=Math.max(...ys)-Math.min(...ys),m=0.12;
+    const x0=Math.max(0,Math.min(...xs)-bw*m),y0=Math.max(0,Math.min(...ys)-bh*m);
+    const x1=Math.min(W,Math.max(...xs)+bw*m),y1=Math.min(H,Math.max(...ys)+bh*m);
+    work=cropFrom(src,x0,y0,x1-x0,y1-y0,2000);whiteBalance(work.c);
+    const qc=q0.map(([x,y])=>[(x/coarse.s-x0)*work.s,(y/coarse.s-y0)*work.s]),qr=detectCard(work.c);
+    const area=q=>Math.abs(q.reduce((a,p,i)=>{const n=q[(i+1)%4];return a+p[0]*n[1]-n[0]*p[1]},0))/2;
+    quad=qr&&Math.abs(area(qr)/area(qc)-1)<0.12?qr:qc; // keep the zoomed-in edges only if they agree with the first look
+  }else{work=cropFrom(src,0,0,W,H,2400);whiteBalance(work.c)}
+  const c=work.c,q=quad||[[0,0],[c.width,0],[c.width,c.height],[0,c.height]];
+  return {found:!!quad,card:warp(c,q,CW,CH),cardHi:warp(c,q,CW*2,CH*2)};
+}
+let current=null,scanId=0;
+async function scan(src,{from}={}){
+  const id=++scanId;$("resultPanel").classList.remove("empty");
+  setStatus("Finding the card…");await new Promise(r=>setTimeout(r,20));
+  const {found,card,cardHi}=prepareCard(src);
+  const res=classify(card);current={feat:features(card),res};
+  // draw
+  const cv=$("cardView"),g=cv.getContext("2d");g.drawImage(card,0,0,cv.width,cv.height);
+  const sx=cv.width/CW;g.lineWidth=2;g.setLineDash([5,3]);
+  g.strokeStyle="#d9a400";g.strokeRect(BOX.x*sx+1,BOX.y*sx+1,BOX.w*sx,BOX.h*sx);
+  g.strokeStyle="#2aa3d6";g.strokeRect(NAME.x*sx,NAME.y*sx,NAME.w*sx,NAME.h*sx);
+  $("boxView").getContext("2d").drawImage(card,BOX.x,BOX.y,BOX.w,BOX.h,0,0,125,92);
+  const t=TYPES[res.type];const chip=$("typeOut");chip.textContent=t.label;chip.className="type-chip "+t.side;
+  const sure=res.margin>0.45?"strong match":res.margin>0.25?"likely":"unsure, check it";
+  $("typeConf").textContent=`${t.icon} · ${sure}`+(found?"":" · card edges not found, used whole photo");
+  $("alts").innerHTML="Next closest: "+res.ranked.slice(1,3).map(([k])=>`<b>${TYPES[k].label}</b>`).join(", ");
+  $("teachSel").value=res.type;
+  // name
+  const bins=NAME_MODES.map(m=>nameBinary(cardHi,2,m));
+  const showBin=b=>{const nv=$("nameView");nv.width=b.width;nv.height=b.height;nv.getContext("2d").drawImage(b,0,0)};
+  showBin(bins[0]);
+  const nameEl=$("nameOut");nameEl.className="name pending";nameEl.textContent="Reading name…";$("nameConf").textContent="";$("links").innerHTML="";$("others").innerHTML="";$("priceLine").innerHTML="";$("tradeAdd").hidden=true;
+  setStatus(found?"Card found. Reading the name…":"Couldn't see the card edges. Try a darker background behind the card. Reading anyway…");
+  current.nameColor=(()=>{const c=document.createElement("canvas");c.width=NAME.w*2;c.height=NAME.h*2;
+    c.getContext("2d").drawImage(cardHi,(NAME.x-10)*2,(NAME.y-4)*2,(NAME.w+12)*2,(NAME.h+8)*2,0,0,c.width,c.height);return c})();
+  onOcrProgress=m=>{if(id!==scanId)return;const step=OCR_STEPS[m.status]||m.status;
+    if(m.status!=="recognizing text")setStatus(`Name reader: ${step}${m.progress>0&&m.progress<1?" "+Math.round(m.progress*100)+"%":""}…`)};
+  const w=await getWorker();
+  if(id!==scanId)return;
+  const claudeOk=!!(await getSampler());$("askClaude").hidden=!claudeOk;
+  if(!w){nameEl.textContent="Name reader didn't load";
+    setStatus(ocrError+(claudeOk?" Tap Read name with Claude instead.":" Card type still works."),true);return}
+  try{
+    setStatus("Reading the name…");
+    const cands=[];
+    for(const b of bins){const r=await withTimeout(w.recognize(b),20000,"Reading the name");if(id!==scanId)return;
+      cands.push({name:cleanName(r.data.text),conf:r.data.confidence,b});}
+    const best=pickName(cands);
+    showBin(best.b);
+    showMatch([best.fixedName,...cands.map(c=>c.name)],best.fixedName,"");
+    setStatus((from?`Done · ${from}`:"Done")+(best.conf<60&&claudeOk?". Not sure about the name? Tap Read name with Claude.":""));
+  }catch(e){nameEl.textContent="Couldn't read the name";setStatus("Reading the name failed: "+e.message,true)}
+}
+
+/* ---------- references & teaching ---------- */
+const TKEY="rcs.taught.v1";
+function taught(){return lsGet(TKEY,[])}
+function refreshTrain(){
+  const t=taught();
+  $("trainCount").textContent=t.length?`${t.length} taught card${t.length>1?"s":""} on this phone: `+Object.entries(t.reduce((m,r)=>(m[r.label]=(m[r.label]||0)+1,m),{})).map(([k,n])=>`${TYPES[k].label} ×${n}`).join(", ")
+    :"None yet. When the scanner gets a type wrong, pick the right one above and tap Teach this. It learns on this phone.";
+  $("teachInfo").textContent=`Matching against ${REFS.length} reference cards.`;
+}
+function rebuildRefs(builtin){
+  REFS=builtin.concat(taught().map(r=>({label:r.label,hog:Float32Array.from(r.hog),col:r.col,src:"taught"})));refreshTrain();
+}
+let BUILTIN=[];
+async function buildBuiltins(){
+  const out=[];
+  for(const [label,src] of SAMPLES){
+    try{const img=await loadImage(src);const {card}=prepareCard(img);const f=features(card);out.push({label,hog:f.hog,col:f.col,src:"builtin"})}
+    catch(e){console.warn("sample failed",src,e)}
+  }
+  return out;
+}
+
+/* ---------- camera & files ---------- */
+let stream=null;
+async function startCamera(){
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1440}},audio:false});
+    const v=$("video");v.srcObject=stream;await v.play();
+    $("viewer").hidden=false;$("snap").hidden=false;$("startCam").hidden=true;$("takeLbl").classList.remove("primary","big");setStatus("Point at the card, then tap Scan card. It doesn't need to fill the outline.");
+  }catch(e){
+    $("startCam").hidden=true;setStatus("Live camera isn't available here. Use Take a photo; it opens your phone's camera.");
+  }
+}
+function snapFrame(){ // crop the video to the guide area (plus margin) so the card dominates
+  const v=$("video"),vw=v.videoWidth,vh=v.videoHeight;if(!vw)return;
+  const box=$("viewer").getBoundingClientRect(),gr=document.querySelector(".guide").getBoundingClientRect();
+  const sc=Math.max(box.width/vw,box.height/vh),ox=(box.width-vw*sc)/2,oy=(box.height-vh*sc)/2;
+  const m=0.12;let x=(gr.left-box.left-ox)/sc,y=(gr.top-box.top-oy)/sc,w=gr.width/sc,h=gr.height/sc;
+  x-=w*m;y-=h*m;w*=1+2*m;h*=1+2*m;x=Math.max(0,x);y=Math.max(0,y);w=Math.min(vw-x,w);h=Math.min(vh-y,h);
+  const c=document.createElement("canvas");c.width=Math.round(w);c.height=Math.round(h);
+  c.getContext("2d").drawImage(v,x,y,w,h,0,0,c.width,c.height);scan(c,{from:"camera"});
+}
+async function onFile(e){
+  const f=e.target.files&&e.target.files[0];if(!f)return;
+  try{const url=URL.createObjectURL(f);const img=await loadImage(url);await scan(img,{from:f.name||"photo"});URL.revokeObjectURL(url)}
+  catch(err){setStatus(err.message,true)}
+  e.target.value="";
+}
+
+/* Mini card pictures: packed 100 to a sheet (10 x 10 of 72x100) so the page ships ~53 images instead of 5,000. */
+let THUMBS=null; // {total, per, cols, tw, th}
+function thumbEl(ti,w){
+  const d=document.createElement("span");d.className="thumb";d.style.width=w+"px";d.style.height=Math.round(w*100/72)+"px";
+  if(THUMBS==null||ti==null||ti<0){d.classList.add("none");return d}
+  const {per,cols,total}=THUMBS,sh=Math.floor(ti/per),k=ti%per,n=Math.min(per,total-sh*per),rows=Math.ceil(n/cols),h=w*100/72;
+  d.style.backgroundImage=`url(thumbs-s${String(sh).padStart(2,"0")}.webp)`;
+  d.style.backgroundSize=`${cols*w}px ${rows*h}px`;d.style.backgroundPosition=`-${(k%cols)*w}px -${Math.floor(k/cols)*h}px`;
+  return d;
+}
+/* ---------- prices & trading ---------- */
+const money=v=>v==null?"No price":"$"+Number(v).toFixed(2);
+function priceSummary(c){
+  const ps=c.p.filter(x=>x[2]!=null);if(!ps.length)return "";
+  const lo=Math.min(...ps.map(x=>x[2])),hi=Math.max(...ps.map(x=>x[2]));
+  const stock=c.p.every(x=>x[3]===0)?' <span class="oos">· out of stock at YTG</span>':"";
+  return (lo===hi?money(lo):`${money(lo)} – ${money(hi)} <span class="oos" style="color:var(--muted)">depending on printing</span>`)+stock;
+}
+const TRADE_KEY="rcs.trade.v1",SIDES=["mine","theirs"];
+let trade=(()=>{const t=lsGet(TRADE_KEY,null);return t&&Array.isArray(t.mine)&&Array.isArray(t.theirs)?t:{mine:[],theirs:[]}})();
+function saveTrade(){lsSet(TRADE_KEY,trade)}
+const sideTotal=k=>trade[k].reduce((a,x)=>a+(x.price||0),0);
+function renderTrade(){
+  for(const k of SIDES){
+    const tiles=$("tiles-"+k);tiles.innerHTML="";
+    if(!trade[k].length){const e=document.createElement("div");e.className="empty";e.textContent="No cards yet. Add by name or photo below.";tiles.appendChild(e)}
+    trade[k].forEach((x,i)=>{const b=document.createElement("button");b.type="button";b.className="tile";b.setAttribute("aria-label",`Remove ${x.n}${x.set?" ("+x.set+")":""}, ${money(x.price)}`);
+      b.innerHTML='<span class="tt"><span class="tn"></span><span class="ts"></span><span class="tp"></span></span>';b.prepend(thumbEl(x.ti,44));
+      b.querySelector(".tn").textContent=x.n;b.querySelector(".ts").textContent=x.set||"";b.querySelector(".tp").textContent=money(x.price);
+      b.onclick=()=>{trade[k].splice(i,1);saveTrade();renderTrade()};tiles.appendChild(b)});
+    const tot=sideTotal(k);$("total-"+k).textContent=money(tot);
+    const ps=trade[k].map(x=>x.price==null?"?":Number(x.price).toFixed(2));
+    $("sum-"+k).textContent=ps.length>1?(ps.length>10?ps.slice(0,10).join(" + ")+" + …":ps.join(" + "))+" = "+money(tot):(ps.length?"Tap a card to remove it":"");
+  }
+  const a=sideTotal("mine"),b=sideTotal("theirs"),d=b-a;
+  $("vsMine").textContent=money(a);$("vsTheirs").textContent=money(b);
+  $("verdict").textContent=!trade.mine.length&&!trade.theirs.length?"Add cards to both sides to compare."
+    :Math.abs(d)<0.005?"Even trade.":d>0?`You get ${money(d)} more in value.`:`You give ${money(-d)} more in value.`;
+  const n=trade.mine.length+trade.theirs.length;$("tradeCount").textContent=n?`(${n})`:"";
+}
+function setTab(name){
+  const trade_=name==="trade";$("scanView").hidden=trade_;$("tradeView").hidden=!trade_;
+  $("tabScan").setAttribute("aria-selected",String(!trade_));$("tabTrade").setAttribute("aria-selected",String(trade_));
+  try{history.replaceState(null,"",trade_?"#trade":"#")}catch(e){}
+}
+function closeAdder(k){$("adder-"+k).hidden=true;$("confirm-"+k).hidden=true;$("results-"+k).innerHTML="";$("adderStatus-"+k).textContent=""}
+function openSearch(k){
+  const ad=$("adder-"+k);ad.hidden=false;$("searchWrap-"+k).hidden=false;$("confirm-"+k).hidden=true;$("adderStatus-"+k).textContent=CARDS?"":"Card list is still loading…";
+  const q=$("q-"+k);q.value="";$("results-"+k).innerHTML="";q.focus();
+}
+function searchCards(q){
+  const n=normName(q);if(!CARDS||n.length<2)return [];
+  const hits=[];
+  for(const c of CARDS){const i=c.norm.indexOf(n);if(i<0)continue;
+    hits.push({c,s:i===0?0:c.norm[i-1]===" "?1:2})}
+  hits.sort((a,b)=>a.s-b.s||a.c.norm.length-b.c.norm.length);
+  let out=hits.slice(0,8).map(h=>h.c);
+  if(out.length<3&&n.length>=4)for(const m of matchCard([q])){if(!out.includes(m.c)&&m.d<0.45)out.push(m.c)}
+  return out.slice(0,8);
+}
+function showResults(k){
+  const box=$("results-"+k);box.innerHTML="";const q=$("q-"+k).value;
+  const res=searchCards(q);
+  if(!res.length&&normName(q).length>=2){box.textContent="No cards match that name.";return}
+  for(const c of res){const b=document.createElement("button");b.type="button";const nm=document.createElement("b");nm.textContent=c.n;
+    const pr=document.createElement("span");const ps=c.p.map(x=>x[2]).filter(v=>v!=null);
+    pr.textContent=(c.p.length>1?c.p.length+" printings · ":"")+(ps.length?money(Math.min(...ps))+(ps.length>1&&Math.max(...ps)!==Math.min(...ps)?"+":""):"");
+    const txt=document.createElement("span");txt.className="rtxt";txt.append(nm);
+    b.append(thumbEl(c.p[0][4],40),txt,pr);b.onclick=()=>showConfirm(k,c,[]);box.appendChild(b)}
+}
+function showConfirm(k,c,alts,note){
+  $("adder-"+k).hidden=false;$("searchWrap-"+k).hidden=true;$("results-"+k).innerHTML="";
+  $("confirm-"+k).hidden=false;$("confirmName-"+k).textContent=c.n;$("adderStatus-"+k).textContent=note||"";
+  const sel=$("print-"+k);sel.innerHTML="";
+  c.p.forEach(([set,h,price,av],i)=>{const o=document.createElement("option");o.value=i;o.textContent=`${set||"Standard"} · ${money(price)}${av===0?" · out of stock":""}`;sel.appendChild(o)});
+  const pv=$("preview-"+k);const showPv=()=>{pv.innerHTML="";const pr=c.p[+sel.value]||c.p[0];pv.appendChild(thumbEl(pr&&pr[4],108))};
+  sel.onchange=showPv;showPv();
+  const altBox=$("confirmAlts-"+k);altBox.innerHTML="";
+  if(alts&&alts.length){altBox.append("Not it? ");alts.forEach((m,i)=>{const b=document.createElement("button");b.type="button";b.className="pick";b.textContent=m.n;
+    b.onclick=()=>showConfirm(k,m,alts.filter(x=>x!==m).concat([c]),note);altBox.append(b);if(i<alts.length-1)altBox.append(", ")})}
+  $("confirmAdd-"+k).onclick=()=>{const [set,h,price,,ti]=c.p[+sel.value]||[];trade[k].push({n:c.n,set:set||"",h:h||"",price:price==null?null:price,ti:ti==null?null:ti});
+    saveTrade();renderTrade();closeAdder(k);};
+  $("confirmCancel-"+k).onclick=()=>closeAdder(k);
+  $("confirmAdd-"+k).focus();
+}
+async function identifyCard(src,say){ // photo -> best matches, for the trade screen
+  say("Finding the card…");await new Promise(r=>setTimeout(r,20));
+  const {card,cardHi}=prepareCard(src);const res=classify(card);
+  say("Reading the name…");const w=await getWorker();
+  if(!w)return {matches:[],raw:"",error:ocrError};
+  const cands=[];for(const m of NAME_MODES){const r=await withTimeout(w.recognize(nameBinary(cardHi,2,m)),20000,"Reading the name");cands.push({name:cleanName(r.data.text),conf:r.data.confidence})}
+  const best=pickName(cands);
+  return {matches:matchCard([best.fixedName,...cands.map(c=>c.name)],res.type,res.margin>0.45),raw:best.fixedName};
+}
+async function addByPhoto(k,file){
+  const ad=$("adder-"+k);ad.hidden=false;$("searchWrap-"+k).hidden=true;$("confirm-"+k).hidden=true;
+  const say=t=>{$("adderStatus-"+k).textContent=t};
+  try{const url=URL.createObjectURL(file);const img=await loadImage(url);const r=await identifyCard(img,say);URL.revokeObjectURL(url);
+    if(r.error){say(r.error+" Try Add by name.");return}
+    const top=r.matches[0];
+    if(!top||top.d>0.45){say(r.raw?`Read “${r.raw}” but couldn't match it. Try Add by name.`:"Couldn't read the name. Try a closer photo or Add by name.");return}
+    showConfirm(k,top.c,r.matches.slice(1).filter(m=>m.d<=0.5).map(m=>m.c),top.d<=0.3?"":`Best guess from “${r.raw}”. Check it before adding.`);
+  }catch(e){say("Couldn't read that photo: "+e.message)}
+}
+/* ---------- boot ---------- */
+(async function(){
+  const sel=$("teachSel");for(const [k,t] of Object.entries(TYPES)){const o=document.createElement("option");o.value=k;o.textContent=t.label;sel.appendChild(o)}
+  const sg=$("samples");
+  for(const [label,src] of SAMPLES){const b=document.createElement("button");b.type="button";b.setAttribute("aria-label","Scan sample: "+TYPES[label].label);
+    const im=document.createElement("img");im.src=src;im.alt="";b.appendChild(im);
+    b.onclick=async()=>{const img=await loadImage(src);scan(img,{from:"sample "+TYPES[label].label});$("resultPanel").scrollIntoView({behavior:"smooth",block:"start"})};sg.appendChild(b)}
+  $("startCam").onclick=startCamera;$("snap").onclick=snapFrame;
+  $("take").onchange=onFile;$("pick").onchange=onFile;
+  if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia))$("startCam").hidden=true;
+  $("teachBtn").onclick=()=>{
+    if(!current){$("teachInfo").textContent="Scan a card first.";return}
+    const label=sel.value,t=taught();t.push({label,hog:Array.from(current.feat.hog,v=>+v.toFixed(3)),col:current.feat.col.map(v=>+v.toFixed(3))});
+    if(!lsSet(TKEY,t)){$("teachInfo").textContent="Couldn't save on this phone (private browsing?).";return}
+    rebuildRefs(BUILTIN);$("teachInfo").textContent=`Saved as ${TYPES[label].label}. Matching against ${REFS.length} reference cards.`;
+  };
+  $("clearTrain").onclick=()=>{lsSet(TKEY,[]);rebuildRefs(BUILTIN);$("trainMsg").textContent="Taught cards cleared."};
+  $("copyTrain").onclick=async()=>{const txt=JSON.stringify(taught());
+    try{await navigator.clipboard.writeText(txt);$("trainMsg").textContent="Copied. Paste it to Claude to make these permanent."}
+    catch(e){$("trainMsg").textContent="Copy was blocked here."}};
+  $("askClaude").onclick=askClaude;
+  $("tabScan").onclick=()=>setTab("scan");$("tabTrade").onclick=()=>setTab("trade");
+  for(const k of SIDES){
+    $("q-"+k).addEventListener("input",()=>showResults(k));
+    $("q-"+k).addEventListener("keydown",e=>{if(e.key==="Escape")closeAdder(k)});
+  }
+  document.querySelectorAll(".add-search").forEach(b=>b.onclick=()=>openSearch(b.dataset.side));
+  document.querySelectorAll(".add-photo").forEach(inp=>inp.onchange=e=>{const f=e.target.files&&e.target.files[0];if(f)addByPhoto(inp.dataset.side,f);e.target.value=""});
+  $("clearTrade").onclick=()=>{trade={mine:[],theirs:[]};saveTrade();renderTrade()};
+  const addFromScan=k=>{if(!current||!current.match)return;setTab("trade");showConfirm(k,current.match,[]);$("adder-"+k).scrollIntoView({block:"center"})};
+  $("addMine").onclick=()=>addFromScan("mine");$("addTheirs").onclick=()=>addFromScan("theirs");
+  renderTrade();if(location.hash==="#trade")setTab("trade");
+  setStatus("Loading reference cards…");
+  BUILTIN=await buildBuiltins();rebuildRefs(BUILTIN);
+  setStatus("");
+  getWorker(); // start downloading the reader in the background
+  loadLexicon();loadCards();
+  window.__rcs={showMatch,matchCard,get CARDS(){return CARDS},scan,prepareCard,classify,nameBinary,canvasFrom,loadImage,features,get REFS(){return REFS},setRefs:r=>{REFS=r}};
+})();
+</script>
+<script>
+if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+</script>
+</body>
+</html>
