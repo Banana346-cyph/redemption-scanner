@@ -26,6 +26,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pillow
+      - name: Keep our own copy of the QR code helpers
+        run: |
+          [ -s qrcode.min.js ] || curl -fsSL https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js -o qrcode.min.js
+          [ -s jsQR.min.js ] || curl -fsSL https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js -o jsQR.min.js
       - run: python scripts/update_cards.py
       - name: Save changes
         run: |
