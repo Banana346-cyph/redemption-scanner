@@ -137,6 +137,12 @@ textarea.q{font:500 .85rem var(--mono);resize:vertical;min-height:72px}
 .dot.bad{background:var(--evil)}
 .qr{align-self:center;background:#fff;border-radius:10px;padding:10px;width:min(220px,70vw)}
 .qr svg{display:block;width:100%;height:auto}
+.live-code{align-self:center;font:800 1.7rem var(--mono);letter-spacing:.12em;margin:0}
+.join-row{display:flex;gap:8px}
+.join-row input{flex:1;min-width:0;text-transform:uppercase;font:700 1.1rem var(--mono);letter-spacing:.08em}
+.qr-cam{position:relative;align-self:center;width:min(280px,80vw);aspect-ratio:1;border-radius:10px;overflow:hidden;background:#000}
+.qr-cam video{width:100%;height:100%;object-fit:cover;display:block}
+.qr-cam::after{content:"";position:absolute;inset:18%;border:3px solid #fff;border-radius:8px}
 .ready-line{margin:0;font:800 1.05rem var(--display);min-height:1.3em}
 #liveReady[aria-pressed="true"]{background:linear-gradient(180deg,#7ef0bd,#3fcf8e);color:#062014;border-color:transparent;box-shadow:0 0 0 1px rgba(82,227,160,.6),0 6px 24px -6px rgba(82,227,160,.8)}
 .tiles .tile.locked{cursor:default}
@@ -316,6 +322,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     <section class="panel shared" id="liveJoin" hidden>
       <h2 class="label">Live trade</h2>
       <p>Someone wants to trade live with you! You each add your own cards and they show up on both phones. (This clears your current trade.)</p>
+      <p class="small" id="liveJoinAppTip" hidden>Got RUT on your home screen? Open it instead, go to Trade, and type code <b id="liveJoinCode"></b> under Join a live trade.</p>
       <div class="row"><button type="button" class="primary" id="liveJoinBtn">Join live trade</button><button type="button" id="liveJoinNo">Not now</button></div>
     </section>
     <section class="panel live" id="livePanel">
@@ -323,12 +330,20 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
         <h2 class="label">Trade live</h2>
         <p class="small">Trade with a friend on 2 phones. You each add your cards and they pop up on both screens.</p>
         <button type="button" class="primary" id="liveStart">Start a live trade</button>
+        <h2 class="label" style="margin-top:8px">Join a live trade</h2>
+        <p class="small">Friend already started one? Scan their QR code here or type in their code.</p>
+        <button type="button" id="liveScanBtn">Scan their QR code</button>
+        <div class="qr-cam" id="liveScanBox" hidden><video id="liveScanVid" playsinline muted autoplay></video></div>
+        <button type="button" id="liveScanStop" hidden>Stop scanning</button>
+        <div class="join-row"><input class="q" id="liveCodeIn" placeholder="CODE" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Live trade code"><button type="button" class="primary" id="liveCodeGo">Join</button></div>
+        <p class="small" id="liveJoinMsg" role="status"></p>
       </div>
       <div class="live-on" id="liveOn" hidden>
         <div class="live-status"><span class="dot" id="liveDot"></span><span id="liveStatus">Connecting…</span></div>
         <div class="live-invite" id="liveInvite">
-          <p class="small">Have your friend scan this with their camera, or send them the link.</p>
+          <p class="small">Have your friend scan this. If they have the RUT app, tell them to open it and hit Join a live trade, then scan this or type this code:</p>
           <div class="qr" id="liveQr" aria-label="QR code for the live trade link"></div>
+          <p class="live-code" id="liveCode"></p>
           <div class="row"><button type="button" id="liveShare">Send link</button><button type="button" id="liveCopy">Copy link</button></div>
         </div>
         <div class="row"><button type="button" id="liveReady">I'm ready to trade</button></div>
@@ -1296,6 +1311,7 @@ function renderTrade(){
 function setTab(name){
   for(const [v,t,n] of [["scanView","tabScan","scan"],["tradeView","tabTrade","trade"],["collView","tabColl","collection"]]){
     $(v).hidden=name!==n;$(t).setAttribute("aria-selected",String(name===n))}
+  if(name!=="trade"&&qrStream)stopQrScan();
   try{if(!/^#(t|live)=/.test(location.hash))history.replaceState(null,"",name==="scan"?"#":"#"+name)}catch(e){}
   if(name==="collection")renderColl();
 }
@@ -1477,7 +1493,55 @@ const RELAY="https://ntfy.sh/";
 const DEVICE=(()=>{let d=lsGet("rcs.device",null);if(!d){d=Math.random().toString(36).slice(2,10);lsSet("rcs.device",d)}return d})();
 const LIVE_KEY="rcs.live";
 let live=null,pubTimer=null,qrLib=null;
-function newRoom(){const a=new Uint8Array(14);crypto.getRandomValues(a);return "rut-"+[...a].map(b=>(b%36).toString(36)).join("")}
+const CODE_ABC="ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+function newRoom(){const a=new Uint8Array(8);crypto.getRandomValues(a);return "rut-"+[...a].map(b=>CODE_ABC[b%CODE_ABC.length]).join("").toLowerCase()}
+function roomCode(room){const c=room.replace(/^rut-/,"").toUpperCase();return c.length===8?c.slice(0,4)+"-"+c.slice(4):c}
+function roomFromText(t){
+  t=String(t||"").trim();
+  const m=t.match(/#live=(rut-[a-z0-9]{8,40})/i);if(m)return m[1].toLowerCase();
+  const c=t.toUpperCase().replace(/[^A-Z0-9]/g,"");
+  return /^[A-Z0-9]{8}$/.test(c)?"rut-"+c.toLowerCase():null;
+}
+let joinArmed=0;
+function joinRoom(room){stopQrScan();trade={mine:[],theirs:[]};saveTrade();renderTrade();startLive(room);$("liveJoin").hidden=true;$("liveJoinMsg").textContent="";$("liveCodeIn").value=""}
+function joinByCode(){
+  const room=roomFromText($("liveCodeIn").value);
+  if(!room){$("liveJoinMsg").textContent="That code doesn't look right. It's 8 letters/numbers, like K7M2-QX9P.";return}
+  if((trade.mine.length||trade.theirs.length)&&Date.now()-joinArmed>8000){joinArmed=Date.now();$("liveJoinMsg").textContent="Heads up: joining clears the trade you have now. Hit Join again to keep going.";return}
+  joinArmed=0;joinRoom(room);
+}
+var qrStream=null,qrTimer=null,qrDet=null;
+async function startQrScan(){
+  const msg=$("liveJoinMsg");msg.textContent="";
+  if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)){msg.textContent="Can't open the camera here. Type their code instead.";return}
+  try{
+    if("BarcodeDetector" in window){try{const f=await BarcodeDetector.getSupportedFormats();if(f.includes("qr_code"))qrDet=new BarcodeDetector({formats:["qr_code"]})}catch(e){qrDet=null}}
+    if(!qrDet&&!window.jsQR)await new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";s.onload=res;s.onerror=rej;document.head.appendChild(s)});
+  }catch(e){msg.textContent="Couldn't load the QR reader. Check your internet or type their code instead.";return}
+  try{qrStream=await getStream()}catch(e){msg.textContent=e&&e.name==="NotAllowedError"?"Camera is blocked. Allow camera access, or type their code instead.":"Couldn't open the camera. Type their code instead.";return}
+  const v=$("liveScanVid");v.srcObject=qrStream;try{await v.play()}catch(e){}
+  $("liveScanBox").hidden=false;$("liveScanStop").hidden=false;$("liveScanBtn").hidden=true;msg.textContent="Point it at their QR code…";
+  const cv=document.createElement("canvas"),ctx=cv.getContext("2d",{willReadFrequently:true});
+  const tick=async()=>{
+    if(!qrStream)return;
+    let text=null;
+    try{
+      if(v.videoWidth){
+        if(qrDet){const r=await qrDet.detect(v);if(r&&r[0])text=r[0].rawValue}
+        else{const s=Math.min(1,640/Math.max(v.videoWidth,v.videoHeight));cv.width=Math.round(v.videoWidth*s);cv.height=Math.round(v.videoHeight*s);ctx.drawImage(v,0,0,cv.width,cv.height);const r=jsQR(ctx.getImageData(0,0,cv.width,cv.height).data,cv.width,cv.height,{inversionAttempts:"dontInvert"});if(r)text=r.data}
+      }
+    }catch(e){}
+    if(text){const room=roomFromText(text);if(room&&/#live=/i.test(text)){if(navigator.vibrate)navigator.vibrate(60);joinRoom(room);return}msg.textContent="That's not a RUT live trade code. Try again."}
+    qrTimer=setTimeout(tick,180);
+  };
+  tick();
+}
+function stopQrScan(){
+  clearTimeout(qrTimer);qrTimer=null;
+  if(qrStream){qrStream.getTracks().forEach(t=>t.stop());qrStream=null}
+  const v=$("liveScanVid");if(v)v.srcObject=null;
+  $("liveScanBox").hidden=true;$("liveScanStop").hidden=true;$("liveScanBtn").hidden=false;
+}
 function liveLink(room){return location.origin+location.pathname+"#live="+room}
 function liveMsg(kind){return JSON.stringify({v:1,from:DEVICE,kind,mine:trade.mine.slice(0,120).map(x=>x.h),ready:!!(live&&live.ready),ts:Date.now()})}
 function publish(kind){if(!live)return;fetch(RELAY+live.room,{method:"POST",body:liveMsg(kind)}).catch(()=>{live&&(live.sendFailed=true,setLiveStatus())})}
@@ -1536,7 +1600,7 @@ function renderLive(){
   $("theirsSub").textContent=on?"Added on their phone":"What you get";
   $("addTheirs").hidden=on;
   $("shareTrade").hidden=on;
-  if(on){drawQr(liveLink(live.room));setLiveStatus()}
+  if(on){drawQr(liveLink(live.room));$("liveCode").textContent=roomCode(live.room);setLiveStatus()}
 }
 async function shareLive(){
   if(!live)return;const url=liveLink(live.room);
@@ -1549,8 +1613,10 @@ function checkLiveLink(){
   const m=location.hash.match(/^#live=(rut-[a-z0-9]{8,40})$/);if(!m||!CARDS)return;
   if(live&&live.room===m[1]){setTab("trade");return}
   $("liveJoin").hidden=false;setTab("trade");
+  $("liveJoinCode").textContent=roomCode(m[1]);
+  $("liveJoinAppTip").hidden=isInstalled()||!document.querySelector('link[rel="manifest"]');
   const done=()=>{$("liveJoin").hidden=true;try{history.replaceState(null,"","#trade")}catch(e){}};
-  $("liveJoinBtn").onclick=()=>{trade={mine:[],theirs:[]};saveTrade();renderTrade();startLive(m[1]);done()};
+  $("liveJoinBtn").onclick=()=>{joinRoom(m[1]);done()};
   $("liveJoinNo").onclick=done;
 }
 /* ---------- sharing a trade ---------- */
@@ -1660,7 +1726,10 @@ function showInstallTip(){
   $("askClaude").onclick=askClaude;
   $("tabScan").onclick=()=>setTab("scan");$("tabTrade").onclick=()=>setTab("trade");$("tabColl").onclick=()=>setTab("collection");
   $("shareTrade").onclick=shareTrade;
-  $("liveStart").onclick=()=>{trade.theirs=[];saveTrade(false);startLive(newRoom())};
+  $("liveStart").onclick=()=>{stopQrScan();trade.theirs=[];saveTrade(false);startLive(newRoom())};
+  $("liveScanBtn").onclick=startQrScan;$("liveScanStop").onclick=()=>{stopQrScan();$("liveJoinMsg").textContent=""};
+  $("liveCodeGo").onclick=joinByCode;
+  $("liveCodeIn").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();joinByCode()}});
   $("liveShare").onclick=shareLive;$("liveCopy").onclick=copyLive;$("liveLeave").onclick=()=>stopLive();
   $("liveReady").onclick=()=>{if(!live)return;live.ready=!live.ready;publish("state");setLiveStatus()};
   setInterval(()=>live&&setLiveStatus(),10000);$("collFilter").oninput=renderColl;
