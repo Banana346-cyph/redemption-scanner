@@ -48,6 +48,61 @@ def thumb(src):
         return None
 
 
+
+# --- picture summaries (pics.bin): one 420-byte colour layout per store picture, used by the app to recognise a card
+#     from its picture. Must stay in step with picFeat() in index.html.
+PGW, PGH = 10, 14
+def _trim_box(px, w, h):  # px: list of (r,g,b); cut white border lines (min channel > 200 on > 60% of the line)
+    wt = [min(p) > 200 for p in px]
+    row = lambda y: sum(wt[y * w:(y + 1) * w]) / w
+    col = lambda x: sum(wt[x::w]) / h
+    t = 0
+    while t < h // 4 and row(t) > 0.6: t += 1
+    b = h
+    while b > h * 3 // 4 and row(b - 1) > 0.6: b -= 1
+    l = 0
+    while l < w // 4 and col(l) > 0.6: l += 1
+    r = w
+    while r > w * 3 // 4 and col(r - 1) > 0.6: r -= 1
+    return t, b, l, r
+def _feat(px, w, t, b, l, r, m=0.05):  # plain-Python version of the app's picFeat()
+    import math
+    h2, w2 = b - t, r - l
+    y0, y1, x0, x1 = h2 * m, h2 * (1 - m), w2 * m, w2 * (1 - m)
+    n = PGW * PGH; S = [[0.0, 0.0, 0.0] for _ in range(n)]; C = [0] * n
+    cx = [math.floor((x + 0.5 - x0) / (x1 - x0) * PGW) for x in range(w2)]
+    for y in range(h2):
+        cy = math.floor((y + 0.5 - y0) / (y1 - y0) * PGH)
+        if cy < 0 or cy >= PGH: continue
+        for x in range(w2):
+            c = cx[x]
+            if c < 0 or c >= PGW: continue
+            k = cy * PGW + c; p = px[(t + y) * w + l + x]
+            S[k][0] += p[0]; S[k][1] += p[1]; S[k][2] += p[2]; C[k] += 1
+    L, A, B = [], [], []
+    for k in range(n):
+        rr, gg, bb = (v / C[k] for v in S[k])
+        L.append((rr + gg + bb) / 3); A.append(rr - gg); B.append((rr + gg) / 2 - bb)
+    mean = sum(L) / n; sd = math.sqrt(sum((v - mean) ** 2 for v in L) / n)
+    cl = lambda v: max(-127, min(127, round(v)))
+    return bytes((cl(v) & 255) for v in [(x - mean) / (sd + 1) * 40 for x in L] + [a * 0.5 for a in A] + [x * 0.5 for x in B])
+def write_pics(root, total):
+    D = 3 * PGW * PGH; out = bytearray(); sheets = {}
+    for ti in range(total):
+        n, k = ti // PER, ti % PER
+        if n not in sheets:
+            p = os.path.join(root, f"thumbs-s{n:02d}.webp")
+            sheets[n] = Image.open(p).convert("RGB") if os.path.exists(p) else None
+        im = sheets[n]
+        x, y = (k % COLS) * TW, (k // COLS) * TH
+        tile = im.crop((x, y, x + TW, y + TH)) if im is not None and y + TH <= im.height else None
+        px = list(tile.getdata()) if tile is not None else []
+        if not px or max(max(p) for p in px) - min(min(p) for p in px) < 6:
+            out += bytes([128]) * D; continue  # no picture in this slot
+        t, b, l, r = _trim_box(px, TW, TH); out += _feat(px, TW, t, b, l, r)
+    open(os.path.join(root, "pics.bin"), "wb").write(bytes(out))
+    print("picture summaries:", total)
+
 def main(root="."):
     singles = [p for p in fetch_products() if p.get("product_type") == "Single"]
     if len(singles) < 1000:  # the store listing looks broken: keep yesterday's data
@@ -86,6 +141,8 @@ def main(root="."):
     for n, im in sheets.items():
         im.save(os.path.join(root, f"thumbs-s{n:02d}.webp"), "WEBP", quality=72, method=6)
     json.dump(index, open(idx_path, "w"), separators=(",", ":"))
+    if todo or not os.path.exists(os.path.join(root, "pics.bin")):
+        write_pics(root, len(index["items"]))
 
     # --- card list
     groups = {}
