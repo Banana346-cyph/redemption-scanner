@@ -546,71 +546,232 @@ function fitLine(pts){ // fit v = a*u + b, with outlier rejection
   }
   return [a,b];
 }
-function maxFilter(src,W,H,r){ // separable sliding max, window 2r+1
-  const tmp=new Float32Array(W*H),out=new Float32Array(W*H);
-  for(let y=0;y<H;y++)for(let x=0;x<W;x++){let m=0;const a=Math.max(0,x-r),b=Math.min(W-1,x+r);for(let k=a;k<=b;k++){const v=src[y*W+k];if(v>m)m=v}tmp[y*W+x]=m}
-  for(let x=0;x<W;x++)for(let y=0;y<H;y++){let m=0;const a=Math.max(0,y-r),b=Math.min(H-1,y+r);for(let k=a;k<=b;k++){const v=tmp[k*W+x];if(v>m)m=v}out[y*W+x]=m}
+function runFilter(src,W,H,r,isMax){ // van Herk / Gil-Werman sliding max (or min), window 2r+1, O(1) per pixel
+  const w=2*r+1,init=isMax?-1e9:1e9,tmp=new Float32Array(W*H),out=new Float32Array(W*H);
+  const L0=Math.max(W,H)+2*r,line=new Float32Array(L0),g=new Float32Array(L0),h=new Float32Array(L0);
+  const one=(len)=>{const L=len+2*r;
+    for(let i=0;i<L;i++){const v=line[i];g[i]=i%w===0?v:(isMax?(g[i-1]>v?g[i-1]:v):(g[i-1]<v?g[i-1]:v))}
+    for(let i=L-1;i>=0;i--){const v=line[i];h[i]=(i%w===w-1||i===L-1)?v:(isMax?(h[i+1]>v?h[i+1]:v):(h[i+1]<v?h[i+1]:v))}};
+  for(let y=0;y<H;y++){const L=W+2*r;for(let i=0;i<L;i++){const x=i-r;line[i]=x<0||x>=W?init:src[y*W+x]}one(W);
+    for(let x=0;x<W;x++){const a=h[x],b=g[x+2*r];tmp[y*W+x]=isMax?(a>b?a:b):(a<b?a:b)}}
+  for(let x=0;x<W;x++){const L=H+2*r;for(let i=0;i<L;i++){const y=i-r;line[i]=y<0||y>=H?init:tmp[y*W+x]}one(H);
+    for(let y=0;y<H;y++){const a=h[y],b=g[y+2*r];out[y*W+x]=isMax?(a>b?a:b):(a<b?a:b)}}
   return out;
 }
+function maxFilter(src,W,H,r){return runFilter(src,W,H,r,true)}
+function minFilter(src,W,H,r){return runFilter(src,W,H,r,false)}
 function boxBlur(src,W,H,r){
   const tmp=new Float32Array(W*H),out=new Float32Array(W*H);
   for(let y=0;y<H;y++){let s=0,n=0;for(let x=-r;x<W;x++){if(x+r<W){s+=src[y*W+x+r];n++}if(x-r-1>=0){s-=src[y*W+x-r-1];n--}if(x>=0)tmp[y*W+x]=s/n}}
   for(let x=0;x<W;x++){let s=0,n=0;for(let y=-r;y<H;y++){if(y+r<H){s+=tmp[(y+r)*W+x];n++}if(y-r-1>=0){s-=tmp[(y-r-1)*W+x];n--}if(y>=0)out[y*W+x]=s/n}}
   return out;
 }
-function findFrame(mask,SW,SH){ // mask: 1 = not white. Returns {quad (400-scale), sc} or null
+/* The card is found by its white border. We make several "is this pixel white?" masks (one brightness cut for the
+   whole photo, plus ones that compare each pixel to its bright neighbours for shadows/uneven light), look for blobs
+   shaped like a card (any tilt), fit 4 edges, snap each edge to the real border in the photo, and then score every
+   guess by checking the photo itself: just outside each edge should be whiter than just inside. Best score wins. */
+function labelComps(mask,SW,SH,minArea){
   const N=SW*SH,lab=new Int32Array(N),stack=new Int32Array(N);let nl=0;const comps=[];
   for(let i=0;i<N;i++){
     if(!mask[i]||lab[i])continue;nl++;let sp2=0;stack[sp2++]=i;lab[i]=nl;
     let x0=SW,y0=SH,x1=0,y1=0,area=0;
     while(sp2){const p=stack[--sp2];const x=p%SW,y=(p/SW)|0;area++;
       if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;
-      for(let dy=-1;dy<=1;dy++){const yy=y+dy;if(yy<0||yy>=SH)continue;
-        for(let dx=-1;dx<=1;dx++){const xx=x+dx;if(xx<0||xx>=SW)continue;const q=yy*SW+xx;
-          if(mask[q]&&!lab[q]){lab[q]=nl;stack[sp2++]=q}}}}
-    comps.push({id:nl,x0,y0,x1,y1,area});
+      if(x>0&&mask[p-1]&&!lab[p-1]){lab[p-1]=nl;stack[sp2++]=p-1}
+      if(x<SW-1&&mask[p+1]&&!lab[p+1]){lab[p+1]=nl;stack[sp2++]=p+1}
+      if(y>0&&mask[p-SW]&&!lab[p-SW]){lab[p-SW]=nl;stack[sp2++]=p-SW}
+      if(y<SH-1&&mask[p+SW]&&!lab[p+SW]){lab[p+SW]=nl;stack[sp2++]=p+SW}}
+    if(area>=minArea)comps.push({id:nl,x0,y0,x1,y1,area});
   }
-  let best=null;
-  for(const k of comps){const w=k.x1-k.x0+1,h=k.y1-k.y0+1;
-    if(w*h<0.012*N||w<24)continue; if(w>=SW-2&&h>=SH-2)continue; if(Math.abs(w/h-0.716)>0.12)continue;
-    const fill=k.area/(w*h); if(fill<0.35)continue; // a card frame is mostly solid
-    const sc=-Math.abs(w/h-0.716)*5+(w*h)/N+fill*0.5;
-    if(!best||sc>best.sc)best={...k,w,h,sc};}
-  if(!best)return null;
-  const id=best.id,L=[],R=[],T=[],B=[];
-  for(let y=Math.floor(best.y0+best.h*0.1);y<best.y0+best.h*0.9;y++){
-    let a=-1,b=-1;for(let x=best.x0;x<=best.x1;x++){if(lab[y*SW+x]===id){if(a<0)a=x;b=x}}
-    if(a<0)continue; R.push([y,b]); if(y>best.y0+best.h*0.3)L.push([y,a]);}
-  for(let x=Math.floor(best.x0+best.w*0.1);x<best.x0+best.w*0.9;x++){
-    let a=-1,b=-1;for(let y=best.y0;y<=best.y1;y++){if(lab[y*SW+x]===id){if(a<0)a=y;b=y}}
-    if(a<0)continue; B.push([x,b]); if(x>best.x0+best.w*0.4)T.push([x,a]);}
-  if(L.length<10||R.length<10||T.length<10||B.length<10)return null;
-  const [la,lb]=fitLine(L),[ra,rb]=fitLine(R),[ta,tb]=fitLine(T),[ba,bb]=fitLine(B);
-  const inter=(xa,xb,ya,yb)=>{const y=(ya*xb+yb)/(1-ya*xa);return [xa*y+xb,y]};
-  const q=[inter(la,lb,ta,tb),inter(ra,rb,ta,tb),inter(ra,rb,ba,bb),inter(la,lb,ba,bb)];
-  const wq=(Math.hypot(q[1][0]-q[0][0],q[1][1]-q[0][1])+Math.hypot(q[2][0]-q[3][0],q[2][1]-q[3][1]))/2;
-  const hq=(Math.hypot(q[3][0]-q[0][0],q[3][1]-q[0][1])+Math.hypot(q[2][0]-q[1][0],q[2][1]-q[1][1]))/2;
-  if(!(Math.abs(wq/hq-0.705)<0.08))return null;
-  return {quad:q,sc:best.sc-Math.abs(wq/hq-0.705)*5};
+  return {lab,comps};
 }
-function detectCard(src){ // src canvas -> 4 corners [tl,tr,br,bl] in src coords, or null
+function erode(mask,SW,SH,r){ // shrink the "not white" areas so thin bridges to the background break
+  let m=mask;
+  for(let k=0;k<r;k++){const o=new Uint8Array(SW*SH);
+    for(let y=1;y<SH-1;y++)for(let x=1;x<SW-1;x++){const i=y*SW+x;o[i]=m[i]&&m[i-1]&&m[i+1]&&m[i-SW]&&m[i+SW]?1:0}m=o}
+  return m;
+}
+function hull(pts){ // monotone chain, pts [[x,y]]
+  pts=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);if(pts.length<3)return pts;
+  const cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);const lo=[],up=[];
+  for(const p of pts){while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],p)<=0)lo.pop();lo.push(p)}
+  for(let i=pts.length-1;i>=0;i--){const p=pts[i];while(up.length>=2&&cr(up[up.length-2],up[up.length-1],p)<=0)up.pop();up.push(p)}
+  up.pop();lo.pop();return lo.concat(up);
+}
+function polyArea(q){let a=0;for(let i=0;i<q.length;i++){const p=q[i],n=q[(i+1)%q.length];a+=p[0]*n[1]-n[0]*p[1]}return Math.abs(a)/2}
+function minRect(h){let best=null;
+  for(let i=0;i<h.length;i++){const p=h[i],n=h[(i+1)%h.length];const L=Math.hypot(n[0]-p[0],n[1]-p[1]);if(L<1e-6)continue;
+    const ux=(n[0]-p[0])/L,uy=(n[1]-p[1])/L;let a0=1e9,a1=-1e9,b0=1e9,b1=-1e9;
+    for(const q of h){const a=q[0]*ux+q[1]*uy,b=-q[0]*uy+q[1]*ux;if(a<a0)a0=a;if(a>a1)a1=a;if(b<b0)b0=b;if(b>b1)b1=b}
+    const ar=(a1-a0)*(b1-b0);if(!best||ar<best.ar)best={ar,ux,uy,a0,a1,b0,b1}}
+  return best}
+function hullQuad(h){ // 4 corners of a card-ish hull: use the min-area rectangle's frame, take extreme hull points along its diagonals
+  let best=null;
+  for(let i=0;i<h.length;i++){const p=h[i],n=h[(i+1)%h.length];const L=Math.hypot(n[0]-p[0],n[1]-p[1]);if(L<1e-6)continue;
+    const ux=(n[0]-p[0])/L,uy=(n[1]-p[1])/L;let a0=1e9,a1=-1e9,b0=1e9,b1=-1e9;
+    for(const q of h){const a=q[0]*ux+q[1]*uy,b=-q[0]*uy+q[1]*ux;if(a<a0)a0=a;if(a>a1)a1=a;if(b<b0)b0=b;if(b>b1)b1=b}
+    const ar=(a1-a0)*(b1-b0);if(!best||ar<best.ar)best={ar,ux,uy,a0,a1,b0,b1}}
+  if(!best)return null;
+  const {ux,uy,a0,a1,b0,b1}=best,wa=a1-a0,wb=b1-b0,ca=(a0+a1)/2,cb=(b0+b1)/2,out=[];
+  for(const [sa,sb] of [[-1,-1],[1,-1],[1,1],[-1,1]]){let bp=null,bv=-1e9;
+    for(const q of h){const a=q[0]*ux+q[1]*uy,b=-q[0]*uy+q[1]*ux;const v=sa*(a-ca)/wa+sb*(b-cb)/wb;if(v>bv){bv=v;bp=q}}
+    out.push(bp)}
+  return orderQuad(out);
+}
+function orderQuad(q){ // -> tl,tr,br,bl with the card standing upright (short side on top)
+  const cx=q.reduce((a,p)=>a+p[0],0)/4,cy=q.reduce((a,p)=>a+p[1],0)/4;
+  q=q.slice().sort((a,b)=>Math.atan2(a[1]-cy,a[0]-cx)-Math.atan2(b[1]-cy,b[0]-cx)); // clockwise on screen, starting near left
+  const len=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
+  // choose the start so that edge 0->1 is a short side whose middle is highest (smallest y)
+  let bs=0,bv=1e18;
+  for(let s=0;s<4;s++){const a=q[s],b=q[(s+1)%4],c=q[(s+2)%4];const short=len(a,b)<=len(b,c)*1.0001;const my=(a[1]+b[1])/2;const v=(short?0:1e9)+my;if(v<bv){bv=v;bs=s}}
+  return [0,1,2,3].map(k=>q[(bs+k)%4]);
+}
+function fitLineTLS(P){ // total least squares line through points; returns {px,py,dx,dy}
+  let pts=P;
+  for(let it=0;it<4;it++){
+    const n=pts.length;if(n<4)return null;let mx=0,my=0;for(const p of pts){mx+=p[0];my+=p[1]}mx/=n;my/=n;
+    let sxx=0,syy=0,sxy=0;for(const p of pts){const a=p[0]-mx,b=p[1]-my;sxx+=a*a;syy+=b*b;sxy+=a*b}
+    const th=0.5*Math.atan2(2*sxy,sxx-syy),dx=Math.cos(th),dy=Math.sin(th);
+    const r=pts.map(p=>Math.abs(-(p[0]-mx)*dy+(p[1]-my)*dx));const med=percentile(r,0.5);const lim=Math.max(1.2,med*2.5);
+    const keep=pts.filter((_,i)=>r[i]<=lim);var L={px:mx,py:my,dx,dy};if(keep.length===pts.length)break;pts=keep}
+  return L;
+}
+function fitLineRansac(P,tol){ // line with the most points within tol (handles bumps like the stats box), then refit on those
+  if(P.length<6)return null;let best=null,bn=-1;const n=P.length,step=Math.max(1,Math.floor(n/40));
+  for(let i=0;i<n;i+=step)for(let j=i+Math.max(1,Math.floor(n/6));j<n;j+=step){const a=P[i],b=P[j];const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<1e-6)continue;
+    const dx=(b[0]-a[0])/L,dy=(b[1]-a[1])/L;let c=0;for(const p of P)if(Math.abs(-(p[0]-a[0])*dy+(p[1]-a[1])*dx)<=tol)c++;if(c>bn){bn=c;best={a,dx,dy}}}
+  if(!best||bn<Math.max(5,n*0.25))return null;
+  const inl=P.filter(p=>Math.abs(-(p[0]-best.a[0])*best.dy+(p[1]-best.a[1])*best.dx)<=tol*1.5);
+  return fitLineTLS(inl)||{px:best.a[0],py:best.a[1],dx:best.dx,dy:best.dy};
+}
+function lineX(a,b){const d=a.dx*b.dy-a.dy*b.dx;if(Math.abs(d)<1e-6)return null;const t=((b.px-a.px)*b.dy-(b.py-a.py)*b.dx)/d;return [a.px+a.dx*t,a.py+a.dy*t]}
+function quadFromLines(Ls){const q=[];for(let i=0;i<4;i++){const p=lineX(Ls[(i+3)%4],Ls[i]);if(!p)return null;q.push(p)}return q}
+function quadAspect(q){const len=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);return (len(q[0],q[1])+len(q[2],q[3]))/(len(q[1],q[2])+len(q[3],q[0]))}
+function isConvex(q){let s=0;for(let i=0;i<4;i++){const a=q[i],b=q[(i+1)%4],c=q[(i+2)%4];const z=(b[0]-a[0])*(c[1]-b[1])-(b[1]-a[1])*(c[0]-b[0]);if(z===0)return false;if(!s)s=Math.sign(z);else if(Math.sign(z)!==s)return false}return true}
+function whiteImg(d,N){const w=new Float32Array(N);for(let i=0;i<N;i++){const r=d[i*4],g=d[i*4+1],b=d[i*4+2],lo=Math.min(r,g,b),hi=Math.max(r,g,b);w[i]=lo-0.6*(hi-lo)}return w}
+function sampleW(w,SW,SH,x,y){x=Math.round(x);y=Math.round(y);if(x<0||y<0||x>=SW||y>=SH)return null;return w[y*SW+x]}
+function snapEdges(w,SW,SH,q){ // move each edge onto the strongest inside->outside "gets whiter" step nearby
+  const cx=q.reduce((a,p)=>a+p[0],0)/4,cy=q.reduce((a,p)=>a+p[1],0)/4;
+  const wid=(Math.hypot(q[1][0]-q[0][0],q[1][1]-q[0][1])+Math.hypot(q[2][0]-q[3][0],q[2][1]-q[3][1]))/2;
+  const R=Math.max(3,Math.round(wid*0.05)),g=Math.max(1,Math.round(wid*0.012)),Ls=[];
+  for(let i=0;i<4;i++){const a=q[i],b=q[(i+1)%4],L=Math.hypot(b[0]-a[0],b[1]-a[1]);const tx=(b[0]-a[0])/L,ty=(b[1]-a[1])/L;
+    let nx=-ty,ny=tx;const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;if((mx-cx)*nx+(my-cy)*ny<0){nx=-nx;ny=-ny}
+    const P=[];const S=Math.max(12,Math.min(60,Math.round(L/3)));
+    for(let k=1;k<S;k++){const t=0.08+0.84*k/S;const px=a[0]+(b[0]-a[0])*t,py=a[1]+(b[1]-a[1])*t;let bo=null,bv=0;
+      for(let o=-R;o<=R;o++){const xi=px+nx*(o-g),yi=py+ny*(o-g),xo=px+nx*(o+g),yo=py+ny*(o+g);
+        const vi=sampleW(w,SW,SH,xi,yi),vo=sampleW(w,SW,SH,xo,yo);if(vi==null||vo==null)continue;const v=vo-vi-Math.abs(o)*0.15;if(v>bv){bv=v;bo=o}}
+      if(bo!=null&&bv>10)P.push([px+nx*bo,py+ny*bo])}
+    const Ln=P.length>=Math.max(6,S*0.3)?fitLineRansac(P,Math.max(1.2,wid*0.008)):null;
+    Ls.push(Ln||{px:a[0],py:a[1],dx:tx,dy:ty})}
+  return quadFromLines(Ls)||q;
+}
+function verifyQuad(w,SW,SH,q){ // fraction of edge samples where just-outside is clearly whiter than just-inside
+  const cx=q.reduce((a,p)=>a+p[0],0)/4,cy=q.reduce((a,p)=>a+p[1],0)/4;
+  const wid=(Math.hypot(q[1][0]-q[0][0],q[1][1]-q[0][1])+Math.hypot(q[2][0]-q[3][0],q[2][1]-q[3][1]))/2;
+  const g=Math.max(1.5,wid*0.018),side=[];
+  for(let i=0;i<4;i++){const a=q[i],b=q[(i+1)%4],L=Math.hypot(b[0]-a[0],b[1]-a[1]);let nx=-(b[1]-a[1])/L,ny=(b[0]-a[0])/L;
+    const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;if((mx-cx)*nx+(my-cy)*ny<0){nx=-nx;ny=-ny}
+    let ok=0,n=0;for(let k=0;k<24;k++){const t=0.1+0.8*(k+0.5)/24,px=a[0]+(b[0]-a[0])*t,py=a[1]+(b[1]-a[1])*t;
+      const vo=sampleW(w,SW,SH,px+nx*g,py+ny*g),vi=sampleW(w,SW,SH,px-nx*g,py-ny*g);if(vo==null||vi==null){n++;continue}
+      n++;if(vo-vi>14&&vo>25)ok++}
+    side.push(ok/n)}
+  const so=side.slice().sort((a,b)=>b-a);return (so[0]+so[1]+so[2])/3*0.7+so[3]*0.3;
+}
+function cardLike(Wimg,SW,SH,q){ // a real card has detail inside (art, text); a plain coloured box doesn't
+  const Hm=homography([[0,0],[1,0],[1,1],[0,1]],q);let s=0,n=0;const v=[];
+  for(let j=1;j<12;j++)for(let i=1;i<9;i++){const u=i/9,w=j/12,z=Hm[6]*u+Hm[7]*w+1;const x=(Hm[0]*u+Hm[1]*w+Hm[2])/z,y=(Hm[3]*u+Hm[4]*w+Hm[5])/z;const c=sampleW(Wimg,SW,SH,x,y);if(c!=null)v.push(c)}
+  if(v.length<20)return 0;const m=v.reduce((a,b)=>a+b,0)/v.length;const sd=Math.sqrt(v.reduce((a,b)=>a+(b-m)*(b-m),0)/v.length);return sd;
+}
+function rightAngles(q){for(let i=0;i<4;i++){const a=q[(i+3)%4],b=q[i],c=q[(i+1)%4];const v1=[a[0]-b[0],a[1]-b[1]],v2=[c[0]-b[0],c[1]-b[1]];
+  const cs=(v1[0]*v2[0]+v1[1]*v2[1])/(Math.hypot(...v1)*Math.hypot(...v2));if(Math.abs(cs)>0.42)return false}return true}
+function quadsFromMask(mask,SW,SH){
+  const N=SW*SH,{lab,comps}=labelComps(mask,SW,SH,Math.round(0.006*N)),out=[];
+  for(const k of comps){const w=k.x1-k.x0+1,h=k.y1-k.y0+1;
+    if(w>=SW-2&&h>=SH-2)continue;if(Math.min(w,h)<16)continue;
+    const bpts=[];for(let y=k.y0;y<=k.y1;y++)for(let x=k.x0;x<=k.x1;x++){const i=y*SW+x;if(lab[i]!==k.id)continue;
+      if(x===0||y===0||x===SW-1||y===SH-1||lab[i-1]!==k.id||lab[i+1]!==k.id||lab[i-SW]!==k.id||lab[i+SW]!==k.id)bpts.push([x,y])}
+    const h0=hull(bpts);if(h0.length<4)continue;const ha=polyArea(h0);if(k.area/ha<0.3)continue;
+    const fr=minRect(h0);if(!fr)continue;
+    const {ux,uy}=fr,A=bpts.map(p=>p[0]*ux+p[1]*uy),B=bpts.map(p=>-p[0]*uy+p[1]*ux);
+    // robust extents (a finger or a touching object pokes out of the blob: ignore the outermost few percent)
+    const a0=percentile(A,0.03),a1=percentile(A,0.97),b0=percentile(B,0.03),b1=percentile(B,0.97),wa=a1-a0,wb=b1-b0;
+    if(wa<12||wb<12)continue;
+    const tol=Math.max(1.2,Math.max(wa,wb)*0.006),Ls=[];
+    const sides=[[0,-1],[1,0],[0,1],[-1,0]]; // top, right, bottom, left of the rectangle frame
+    for(const [sa,sb] of sides){const prof=new Map(); // outer profile: per step along the side, the outermost blob pixel inside the band
+      for(let j=0;j<bpts.length;j++){const a=A[j],b=B[j];
+        const along=sb?Math.round(a):Math.round(b),o=sb?sb*b:sa*a,edge=sb?(sb<0?-b0:b1):(sa<0?-a0:a1),ext=sb?wb:wa;
+        if(o<edge-ext*0.2||o>edge+ext*0.12)continue;const pv=prof.get(along);if(!pv||o>pv[0])prof.set(along,[o,bpts[j]])}
+      const ln=fitLineRansac([...prof.values()].map(v=>v[1]),tol);if(!ln)break;Ls.push(ln)}
+    if(Ls.length<4)continue;
+    let q=quadFromLines(Ls);if(!q||!isConvex(q))continue;
+    // second pass: refit each side to the outer-profile pixels close to the line just found
+    const Ls2=Ls.map((ln,i)=>{const P=[];const nx=-ln.dy,ny=ln.dx;const c=q.reduce((s,p)=>[s[0]+p[0]/4,s[1]+p[1]/4],[0,0]);
+      const sgn=Math.sign((c[0]-ln.px)*nx+(c[1]-ln.py)*ny)||1,L=Math.hypot(q[(i+1)%4][0]-q[i][0],q[(i+1)%4][1]-q[i][1]);
+      const prof=new Map();for(const p of bpts){const dist=((p[0]-ln.px)*nx+(p[1]-ln.py)*ny)*sgn;if(Math.abs(dist)>Math.max(3,L*0.04))continue;
+        const t=Math.round((p[0]-ln.px)*ln.dx+(p[1]-ln.py)*ln.dy);const pv=prof.get(t);if(!pv||dist<pv[0])prof.set(t,[dist,p])}
+      return fitLineRansac([...prof.values()].map(v=>v[1]),tol)||ln});
+    const q2=quadFromLines(Ls2);if(q2&&isConvex(q2))q=q2;
+    const cands=[q];
+    // card whose top (or any one) frame edge blends into the border, e.g. silver banners: rebuild that side from the card's shape
+    for(let m=0;m<4;m++){const opp=Ls2[(m+2)%4],s1=Ls2[(m+1)%4],s3=Ls2[(m+3)%4];
+      const c1=lineX(opp,s1),c3=lineX(opp,s3);if(!c1||!c3)continue;const base=Math.hypot(c1[0]-c3[0],c1[1]-c3[1]);
+      const len=(m%2===0)?base/0.716:base*0.716; // m even: top/bottom missing -> height from width
+      const nx=-opp.dy,ny=opp.dx,cc=q.reduce((s,p)=>[s[0]+p[0]/4,s[1]+p[1]/4],[0,0]);const sg=Math.sign((cc[0]-opp.px)*nx+(cc[1]-opp.py)*ny)||1;
+      const nl={px:opp.px+nx*sg*len,py:opp.py+ny*sg*len,dx:opp.dx,dy:opp.dy};const L4=Ls2.slice();L4[m]=nl;
+      const qq=quadFromLines(L4);if(qq&&isConvex(qq)&&Math.abs(quadAspect(qq)-quadAspect(q))>0.04){qq.inferred=1;cands.push(qq)}}
+    for(const qq of cands){
+      const asp=quadAspect(qq);if(Math.abs(asp-0.716)>0.16&&Math.abs(1/asp-0.716)>0.16)continue;
+      const qa=polyArea(qq);if(qa<0.006*N)continue;if(k.area/qa<0.25)continue;
+      const oq=orderQuad(qq);oq.inferred=qq.inferred;out.push(oq)}
+  }
+  return out;
+}
+function detectCard(src,opts){ // src canvas -> 4 corners [tl,tr,br,bl] in src coords, or null
   const SW=400, s=SW/src.width, SH=Math.round(src.height*s);
   const c=document.createElement("canvas");c.width=SW;c.height=SH;
   const g=ctx2d(c);g.drawImage(src,0,0,SW,SH);
   const d=g.getImageData(0,0,SW,SH).data, N=SW*SH;
   const mn=new Uint8Array(N), sp=new Uint8Array(N), mx=new Float32Array(N);
   for(let i=0;i<N;i++){const r=d[i*4],gg=d[i*4+1],b=d[i*4+2];const lo=Math.min(r,gg,b),hi=Math.max(r,gg,b);mn[i]=lo;sp[i]=hi-lo;mx[i]=hi}
-  const tries=[];
-  // 1) even lighting: one brightness cut for the whole photo
-  const thr=Math.max(110,Math.min(200,percentile(mn,0.98)*0.78));
-  tries.push(i=>(mn[i]>thr&&sp[i]<45)?0:1);
-  // 2) uneven lighting / glare: compare each pixel with the brightest nearby pixel instead
-  const lm=boxBlur(maxFilter(mx,SW,SH,30),SW,SH,12);
-  for(const k of [0.8,0.7])tries.push(i=>(mx[i]>40&&mx[i]>=k*lm[i]&&sp[i]<0.25*mx[i])?0:1);
-  let best=null;
-  for(const f of tries){const mask=new Uint8Array(N);for(let i=0;i<N;i++)mask[i]=f(i);
-    const r=findFrame(mask,SW,SH);if(r&&(!best||r.sc>best.sc))best=r;}
-  return best?best.quad.map(([x,y])=>[x/s,y/s]):null;
+  const W=whiteImg(d,N),memo={};
+  const once=(k,f)=>memo[k]||(memo[k]=f());
+  const mk=f=>{const m=new Uint8Array(N);for(let i=0;i<N;i++)m[i]=f(i)?0:1;return m}; // 0 = white
+  const closeL=()=>once("close",()=>minFilter(maxFilter(mx,SW,SH,16),SW,SH,16));
+  const l30=()=>once("l30",()=>boxBlur(maxFilter(mx,SW,SH,30),SW,SH,12));
+  const p98=percentile(mn,0.98);
+  const MASKS=[
+    // light level from a max-then-min filter: handles even light, gradients and sharp shadow edges
+    ()=>{const L=closeL();return mk(i=>mx[i]>30&&mx[i]>=0.8*L[i]&&sp[i]<0.22*mx[i]+6)},
+    ()=>{const L=closeL();return mk(i=>mx[i]>30&&mx[i]>=0.68*L[i]&&sp[i]<0.22*mx[i]+6)},
+    // one brightness cut for the whole photo
+    ()=>{const thr=Math.max(70,Math.min(205,p98*0.78));return mk(i=>mn[i]>thr&&sp[i]<45)},
+    ()=>{const thr=Math.max(70,Math.min(205,p98*0.62));return mk(i=>mn[i]>thr&&sp[i]<45)},
+    // compare with the brightest pixel nearby (glare, uneven light)
+    ()=>{const lm=l30();return mk(i=>mx[i]>30&&mx[i]>=0.8*lm[i]&&sp[i]<0.25*mx[i]+6)},
+    ()=>{const lm=l30();return mk(i=>mx[i]>30&&mx[i]>=0.7*lm[i]&&sp[i]<0.25*mx[i]+6)},
+    ()=>{const lm=boxBlur(maxFilter(mx,SW,SH,12),SW,SH,5);return mk(i=>mx[i]>30&&mx[i]>=0.82*lm[i]&&sp[i]<0.25*mx[i]+6)},
+    ()=>{const l6=boxBlur(maxFilter(mx,SW,SH,6),SW,SH,2),L=l30();return mk(i=>mx[i]>30&&mx[i]>=0.86*l6[i]&&mx[i]>=0.4*L[i]&&sp[i]<0.22*mx[i]+6)},
+  ];
+  const STAGES=window.__MS?[[window.__MS,window.__ER||[0,2]]]:[[[0,2],[0]],[[0,1,2,3],[0,2]],[[4,5,6,7],[0,2]]];
+  let best=null;const seen=[],seen0=[],built={};let nc=0;
+  const dup=(L,q,t)=>L.some(o=>o.every((p,i)=>Math.hypot(p[0]-q[i][0],p[1]-q[i][1])<t));
+  const hint=opts&&opts.hint?[orderQuad(opts.hint.map(([x,y])=>[x*s,y*s]))]:[];
+  for(const [ms,er] of STAGES){
+    for(const mi of [-1,...ms]){const m=mi<0?null:(built[mi]||(built[mi]=MASKS[mi]()));
+      for(const r of (mi<0?[0]:er)){for(const q0 of (mi<0?hint.splice(0):quadsFromMask(r?erode(m,SW,SH,r):m,SW,SH))){nc++;
+        if(dup(seen0,q0,1.5))continue;seen0.push(q0);
+        const q=orderQuad(snapEdges(W,SW,SH,q0));if(!isConvex(q))continue;const inf=q0.inferred?0.2:0;
+        const asp=quadAspect(q);if(Math.abs(asp-0.716)>0.12||!rightAngles(q))continue;
+        if(dup(seen,q,2))continue;seen.push(q);if(cardLike(W,SW,SH,q)<12)continue;
+        const v=verifyQuad(W,SW,SH,q);if(window.__dbgMasks)(window.__cands=window.__cands||[]).push([mi,r,q.map(p=>p.map(Math.round)),+v.toFixed(2),+asp.toFixed(3)]);
+        const sc=v-inf-Math.abs(asp-0.716)*1.5+0.3*Math.sqrt(polyArea(q)/N);
+        if(v>=0.45&&(!best||sc>best.sc))best={q,sc,v:v-inf}}}}
+    if(best&&best.v>=0.85)break; // good enough: skip the slower fallbacks
+  }
+  window.__lastDetect={n:nc,best:best&&best.v};
+  return best?best.q.map(([x,y])=>[x/s,y/s]):null;
 }
 
 /* ---------- 2. straighten it ---------- */
@@ -710,6 +871,13 @@ function otsu(vals,lo,hi){
   return lo+(bi+1)*(hi-lo)/B;
 }
 const NAME_MODES=["A","B","C","D"];
+function nameModes(cardHi){ // a light (silver/white) name banner needs a higher cut so the letters separate from it
+  const k=2,c=document.createElement("canvas"),w=NAME.w,h=NAME.h;c.width=w;c.height=h;const g=ctx2d(c);
+  g.drawImage(cardHi,NAME.x*k,NAME.y*k,NAME.w*k,NAME.h*k,0,0,w,h);const d=g.getImageData(0,0,w,h).data,v=[];
+  for(let i=0;i<w*h;i+=3){const r=d[i*4],gg=d[i*4+1],b=d[i*4+2],mn=Math.min(r,gg,b),mx=Math.max(r,gg,b);v.push(mn-0.6*(mx-mn))}
+  const med=percentile(v,0.5),top=percentile(v,0.995);
+  return NAME_MODES; // (tried an extra cut for silver banners: no gain, the ability-text backup covers those)
+}
 function nameBinary(cardHi,k,mode="A"){ // cardHi is k*500 x k*700
   const S=3,w=NAME.w*S,h=NAME.h*S;
   const c=document.createElement("canvas");c.width=w;c.height=h;const g=ctx2d(c);g.imageSmoothingQuality="high";
@@ -721,6 +889,7 @@ function nameBinary(cardHi,k,mode="A"){ // cardHi is k*500 x k*700
   if(mode==="A")thr=Math.max(140,percentile(smp,0.97)*0.75);
   else if(mode==="B")thr=Math.max(100,otsu(smp,-160,256));
   else if(mode==="C")thr=Math.max(100,percentile(smp,0.995)*0.62);
+  else if(mode==="E")thr=Math.max(150,percentile(smp,0.995)*0.92);
   else thr=Math.max(100,percentile(smp,0.995)*0.75);
   const m=new Uint8Array(N);for(let i=0;i<N;i++)m[i]=score[i]>thr?1:0;
   // keep bright shapes that are enclosed (letters), drop anything touching the strip edge
@@ -818,6 +987,11 @@ function matchCard(readings,typeKey,typeSure){
   for(const c of CARDS){let best=9;
     for(const r of rs){const L=Math.max(r.length,c.norm.length);if(Math.abs(r.length-c.norm.length)>Math.max(4,L*0.5))continue;
       const d=wdist(r,c.norm,L*0.55)/L;if(d<best)best=d}
+    if(!window.__noPartial)for(const r of rs){ // only part of a long name was read (start or end): compare with that part, small penalty
+      const n=c.norm,rl=r.length;if(rl<6||rl>n.length-3)continue;
+      const pre=n.slice(0,rl),suf=n.slice(n.length-rl),miss=1-rl/n.length;
+      if(n[rl]===" "){const d=wdist(r,pre,rl*0.3)/rl+0.12+0.12*miss;if(d<best)best=d}
+      if(n[n.length-rl-1]===" "){const d=wdist(r,suf,rl*0.3)/rl+0.12+0.12*miss;if(d<best)best=d}}
     if(best>0.55)continue;
     out.push({c,d:best,s:best-(code&&c.t.has(code)?(typeSure?0.08:0.04):0)});}
   return out.sort((a,b)=>a.s-b.s).slice(0,4);
@@ -1067,6 +1241,43 @@ function cropFrom(src,x,y,w,h,maxDim){
   const s=Math.min(1,maxDim/Math.max(w,h)),c=document.createElement("canvas");c.width=Math.round(w*s);c.height=Math.round(h*s);
   const g=c.getContext("2d");g.imageSmoothingQuality="high";g.drawImage(src,x,y,w,h,0,0,c.width,c.height);return {c,s};
 }
+/* Even out the lighting using the card's own white border as a reference: read the border colour all the way
+   round, spread it across the card, and divide it out. Fixes dim photos, colour casts, gradients and soft shadows. */
+function borderLight(src,quad){
+  const Hm=homography([[0,0],[CW,0],[CW,CH],[0,CH]],quad),SW=src.width,SH=src.height;
+  const d=ctx2d(src).getImageData(0,0,SW,SH).data;
+  const at=(u,v)=>{const z=Hm[6]*u+Hm[7]*v+1;return [(Hm[0]*u+Hm[1]*v+Hm[2])/z,(Hm[3]*u+Hm[4]*v+Hm[5])/z]};
+  const px=(x,y)=>{x=Math.round(x);y=Math.round(y);if(x<1||y<1||x>=SW-1||y>=SH-1)return null;const o=[0,0,0];
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const i=((y+dy)*SW+x+dx)*4;o[0]+=d[i];o[1]+=d[i+1];o[2]+=d[i+2]}return o.map(v=>v/9)};
+  const K=24,off=CW*0.032;
+  const side=(f)=>{const raw=[];for(let k=0;k<=K;k++){const t=k/K;const p=f(t);const c=px(...at(p[0],p[1]));raw.push(c)}
+    // keep samples that look like the border (bright-ish, not colourful), then smooth with a running median
+    const ok=raw.map(c=>c&&Math.max(...c)>20&&(Math.max(...c)-Math.min(...c))<0.35*Math.max(...c)+12?c:null);
+    const good=ok.filter(Boolean);if(good.length<K*0.4)return null;
+    const out=[];for(let k=0;k<=K;k++){const win=[];for(let j=k-3;j<=k+3;j++)if(ok[j])win.push(ok[j]);
+      const use=win.length?win:good;out.push([0,1,2].map(ch=>percentile(use.map(c=>c[ch]),0.6)))}
+    return out};
+  const T=side(t=>[t*CW,-off]),B=side(t=>[t*CW,CH+off]),L=side(t=>[-off,t*CH]),R=side(t=>[CW+off,t*CH]);
+  if(!T||!B||!L||!R)return null;
+  // the border should be one colour: if one side is far brighter than the rest it's probably the background, give up
+  const lum=a=>a.reduce((s,c)=>s+c[0]+c[1]+c[2],0)/a.length/3;const ls=[T,B,L,R].map(lum);
+  if(Math.min(...ls)<12)return null;
+  return {T,B,L,R,K};
+}
+function lightAt(F,s,t){ // Coons patch over the four border profiles, s,t in 0..1
+  const {T,B,L,R,K}=F;const ip=(A,x)=>{const f=x*K,i=Math.min(K-1,Math.floor(f)),w=f-i;return [0,1,2].map(c=>A[i][c]*(1-w)+A[i+1][c]*w)};
+  const t_=ip(T,s),b_=ip(B,s),l_=ip(L,t),r_=ip(R,t);
+  const tl=[0,1,2].map(c=>(T[0][c]+L[0][c])/2),tr=[0,1,2].map(c=>(T[K][c]+R[0][c])/2),bl=[0,1,2].map(c=>(B[0][c]+L[K][c])/2),br=[0,1,2].map(c=>(B[K][c]+R[K][c])/2);
+  return [0,1,2].map(c=>(1-t)*t_[c]+t*b_[c]+(1-s)*l_[c]+s*r_[c]-((1-s)*(1-t)*tl[c]+s*(1-t)*tr[c]+(1-s)*t*bl[c]+s*t*br[c]));
+}
+function flattenLight(card,F){ // edits card canvas in place
+  const W=card.width,H=card.height,g=ctx2d(card),im=g.getImageData(0,0,W,H),o=im.data;
+  const GX=20,GY=28,grid=[];for(let j=0;j<=GY;j++)for(let i=0;i<=GX;i++)grid.push(lightAt(F,i/GX,j/GY).map(v=>Math.max(18,v)));
+  for(let y=0;y<H;y++){const fy=y/(H-1)*GY,j=Math.min(GY-1,Math.floor(fy)),wy=fy-j;
+    for(let x=0;x<W;x++){const fx=x/(W-1)*GX,i=Math.min(GX-1,Math.floor(fx)),wx=fx-i;const a=grid[j*(GX+1)+i],b=grid[j*(GX+1)+i+1],c=grid[(j+1)*(GX+1)+i],e=grid[(j+1)*(GX+1)+i+1],k=(y*W+x)*4;
+      for(let ch=0;ch<3;ch++){const l=(a[ch]*(1-wx)+b[ch]*wx)*(1-wy)+(c[ch]*(1-wx)+e[ch]*wx)*wy;o[k+ch]=Math.min(255,o[k+ch]*Math.min(4,238/l))}}}
+  g.putImageData(im,0,0);return card;
+}
 /* Find the card anywhere in the photo, then "zoom in": cut that area out of the full-resolution
    photo and find the edges again there, so small or off-centre cards still get full detail. */
 function prepareCard(src){
@@ -1079,13 +1290,16 @@ function prepareCard(src){
     const bw=Math.max(...xs)-Math.min(...xs),bh=Math.max(...ys)-Math.min(...ys),m=0.12;
     const x0=Math.max(0,Math.min(...xs)-bw*m),y0=Math.max(0,Math.min(...ys)-bh*m);
     const x1=Math.min(W,Math.max(...xs)+bw*m),y1=Math.min(H,Math.max(...ys)+bh*m);
-    work=cropFrom(src,x0,y0,x1-x0,y1-y0,2000);whiteBalance(work.c);
-    const qc=q0.map(([x,y])=>[(x/coarse.s-x0)*work.s,(y/coarse.s-y0)*work.s]),qr=detectCard(work.c);
+    work=cropFrom(src,x0,y0,x1-x0,y1-y0,2000);whiteBalance(work.c);work.x0=x0;work.y0=y0;
+    const qc=q0.map(([x,y])=>[(x/coarse.s-x0)*work.s,(y/coarse.s-y0)*work.s]),qr=detectCard(work.c,{hint:qc});
     const area=q=>Math.abs(q.reduce((a,p,i)=>{const n=q[(i+1)%4];return a+p[0]*n[1]-n[0]*p[1]},0))/2;
-    quad=qr&&Math.abs(area(qr)/area(qc)-1)<0.12?qr:qc; // keep the zoomed-in edges only if they agree with the first look
+    quad=qr||qc; // the first look competes with the zoomed-in guesses; the best-checked edges win
   }else{work=cropFrom(src,0,0,W,H,2400);whiteBalance(work.c)}
   const c=work.c,q=quad||[[0,0],[c.width,0],[c.width,c.height],[0,c.height]];
-  return {found:!!quad,card:warp(c,q,CW,CH),cardHi:warp(c,q,CW*2,CH*2)};
+  const srcQuad=quad?q.map(([x,y])=>[x/work.s+(work.x0||0),y/work.s+(work.y0||0)]):null;
+  const card=warp(c,q,CW,CH),cardHi=warp(c,q,CW*2,CH*2);
+  const F=quad&&!window.__noFlat?borderLight(c,q):null;if(F){flattenLight(card,F);flattenLight(cardHi,F)}
+  return {found:!!quad,card,cardHi,quad:srcQuad,flat:!!F};
 }
 let current=null,scanId=0;
 async function scan(src,{from}={}){
@@ -1105,7 +1319,7 @@ async function scan(src,{from}={}){
   $("alts").innerHTML="Next closest: "+res.ranked.slice(1,3).map(([k])=>`<b>${TYPES[k].label}</b>`).join(", ");
   $("teachSel").value=res.type;
   // name
-  const bins=NAME_MODES.map(m=>nameBinary(cardHi,2,m));
+  const bins=nameModes(cardHi).map(m=>nameBinary(cardHi,2,m));
   const showBin=b=>{const nv=$("nameView");nv.width=b.width;nv.height=b.height;nv.getContext("2d").drawImage(b,0,0)};
   showBin(bins[0]);
   const nameEl=$("nameOut");nameEl.className="name pending";nameEl.textContent="Reading name…";$("nameConf").textContent="";$("links").innerHTML="";$("others").innerHTML="";$("priceLine").innerHTML="";$("tradeAdd").hidden=true;
@@ -1364,7 +1578,7 @@ async function identifyCard(src,say){ // photo -> best matches, for the trade sc
   const {card,cardHi}=prepareCard(src);const res=classify(card);
   say("Reading the name…");const w=await getWorker();
   if(!w)return {matches:[],raw:"",error:ocrError,card};
-  const cands=[];for(const m of NAME_MODES){const r=await withTimeout(w.recognize(nameBinary(cardHi,2,m)),20000,"Reading the name");cands.push({name:cleanName(r.data.text),conf:r.data.confidence})}
+  const cands=[];for(const m of nameModes(cardHi)){const r=await withTimeout(w.recognize(nameBinary(cardHi,2,m)),20000,"Reading the name");cands.push({name:cleanName(r.data.text),conf:r.data.confidence})}
   const best=pickName(cands),readings=[best.fixedName,...cands.map(c=>c.name)];
   const ls=await maybeLostSoul(cardHi,card,readings,res.type,w,say);
   if(ls)return {matches:[{c:ls.card,d:ls.sure?0:0.4,s:0}],raw:best.fixedName,card};
