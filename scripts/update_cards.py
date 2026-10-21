@@ -177,6 +177,29 @@ def main(root="."):
     out = {"pricesFetched": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
            "thumbs": {"total": len(index["items"]), "per": PER, "cols": COLS, "tw": TW, "th": TH}, "cards": cards}
     old = json.load(open(os.path.join(root, "cards.json"))) if os.path.exists(os.path.join(root, "cards.json")) else {}
+    # --- price history: each night, which prices changed (old -> new); the app uses it for "your collection went up/down"
+    def price_map(cl):
+        return {pr[1]: pr[2] for c in (cl or []) for pr in c[2]}
+    hpath = os.path.join(root, "price-history.json")
+    hist = json.load(open(hpath)) if os.path.exists(hpath) else {"days": []}
+    if old.get("cards"):
+        before, after = price_map(old["cards"]), price_map(cards)
+        ch = {h: [before[h], p] for h, p in after.items() if h in before and before[h] != p}
+        today = time.strftime("%Y-%m-%d", time.gmtime())
+        if ch:
+            prev = next((d for d in hist["days"] if d["d"] == today), None)
+            if prev:  # a second run on the same day: keep the morning's starting price
+                for h, (o, n) in ch.items():
+                    if h in prev["ch"]: o = prev["ch"][h][0]
+                    prev["ch"][h] = [o, n]
+                prev["ch"] = {h: v for h, v in prev["ch"].items() if v[0] != v[1]}
+            else:
+                hist["days"].append({"d": today, "ch": ch})
+            hist["days"] = hist["days"][-90:]
+            json.dump(hist, open(hpath, "w"), separators=(",", ":"))
+            print("price changes:", len(ch))
+    if not os.path.exists(hpath):
+        json.dump(hist, open(hpath, "w"), separators=(",", ":"))
     if old.get("cards") == json.loads(json.dumps(cards)) and old.get("thumbs") == out["thumbs"] and not todo:
         print("No changes."); return
     json.dump(out, open(os.path.join(root, "cards.json"), "w"), separators=(",", ":"), ensure_ascii=False)
