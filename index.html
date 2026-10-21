@@ -728,6 +728,73 @@ function quadsFromMask(mask,SW,SH){
   }
   return out;
 }
+/* Cards without a white border (full-art) or with a frame that blends in: find the card's outside edge instead.
+   Straight edges are found with a Hough transform; pairs of roughly parallel lines that meet another pair at about
+   90 degrees and make a card-shaped box are scored by how much of each side really is an edge in the photo. */
+function edgeMap(d,SW,SH){
+  const N=SW*SH,gx=new Float32Array(N),gy=new Float32Array(N),mag=new Float32Array(N);
+  const L=new Float32Array(N);for(let i=0;i<N;i++)L[i]=d[i*4]*0.3+d[i*4+1]*0.5+d[i*4+2]*0.2;
+  const C=[0,1,2].map(ch=>{const a=new Float32Array(N);for(let i=0;i<N;i++)a[i]=d[i*4+ch];return a});
+  for(let y=1;y<SH-1;y++)for(let x=1;x<SW-1;x++){const i=y*SW+x;let bx=0,by=0,bm=-1;
+    for(const a of C){const sx=(a[i-SW+1]+2*a[i+1]+a[i+SW+1])-(a[i-SW-1]+2*a[i-1]+a[i+SW-1]),sy=(a[i+SW-1]+2*a[i+SW]+a[i+SW+1])-(a[i-SW-1]+2*a[i-SW]+a[i-SW+1]);
+      const m=sx*sx+sy*sy;if(m>bm){bm=m;bx=sx;by=sy}}
+    gx[i]=bx;gy[i]=by;mag[i]=Math.sqrt(bm)/4}
+  return {gx,gy,mag,L};
+}
+function houghLines(E,SW,SH,maxLines){
+  const {gx,gy,mag}=E,N=SW*SH,NT=180,diag=Math.ceil(Math.hypot(SW,SH)),NR=2*diag+1,acc=new Float32Array(NT*NR);
+  const cs=[],sn=[];for(let t=0;t<NT;t++){cs.push(Math.cos(t*Math.PI/NT));sn.push(Math.sin(t*Math.PI/NT))}
+  const smp=[];for(let i=0;i<N;i+=7)smp.push(mag[i]);const thr=Math.max(14,percentile(smp,0.88));
+  for(let y=2;y<SH-2;y++)for(let x=2;x<SW-2;x++){const i=y*SW+x,m=mag[i];if(m<thr)continue;
+    // thin: keep only the local maximum across the edge
+    const ax=gx[i]/(m*4),ay=gy[i]/(m*4);const j1=Math.round(y+ay)*SW+Math.round(x+ax),j2=Math.round(y-ay)*SW+Math.round(x-ax);if(mag[j1]>m||mag[j2]>m)continue;
+    let th=Math.atan2(gy[i],gx[i]);if(th<0)th+=Math.PI;const t0=Math.round(th/Math.PI*NT);
+    for(let dt=-6;dt<=6;dt++){const t=(t0+dt+NT)%NT;let r=x*cs[t]+y*sn[t];if((t0+dt)<0||(t0+dt)>=NT)r=r; const ri=Math.round(r)+diag;if(ri>=0&&ri<NR)acc[t*NR+ri]+=1}}
+  const peaks=[];const used=new Uint8Array(NT*NR);
+  for(let k=0;k<maxLines;k++){let bi=-1,bv=0;for(let i=0;i<acc.length;i++)if(!used[i]&&acc[i]>bv){bv=acc[i];bi=i}
+    if(bi<0||bv<18)break;const t=(bi/NR)|0,r=bi%NR-diag;peaks.push({t:t*Math.PI/NT,r,v:bv});
+    for(let dt=-4;dt<=4;dt++)for(let dr=-7;dr<=7;dr++){const tt=t+dt,rr=bi%NR+dr;if(rr<0||rr>=NR)continue;
+      const tw=(tt+NT)%NT,rw=(tt<0||tt>=NT)?(NR-1-rr):rr;if(rw>=0&&rw<NR)used[tw*NR+rw]=1}}
+  return peaks;
+}
+function lineFromPolar(l){const c=Math.cos(l.t),s=Math.sin(l.t);return {px:c*l.r,py:s*l.r,dx:-s,dy:c}}
+function edgeSupport(E,SW,SH,q){ // per side: fraction of points on the side with a strong edge across it
+  const {mag,gx,gy}=E,side=[];
+  for(let i=0;i<4;i++){const a=q[i],b=q[(i+1)%4],L=Math.hypot(b[0]-a[0],b[1]-a[1]);const nx=-(b[1]-a[1])/L,ny=(b[0]-a[0])/L;let ok=0,n=0;
+    for(let k=0;k<30;k++){const t=0.06+0.88*(k+0.5)/30;let best=0;
+      for(let o=-1;o<=1;o++){const x=Math.round(a[0]+(b[0]-a[0])*t+nx*o),y=Math.round(a[1]+(b[1]-a[1])*t+ny*o);if(x<1||y<1||x>=SW-1||y>=SH-1)continue;
+        const j=y*SW+x;const m=mag[j];if(m<12)continue;const al=Math.abs(gx[j]*nx+gy[j]*ny)/(m*4);if(al>0.8&&m>best)best=m}
+      n++;if(best>0)ok++}
+    side.push(ok/n)}
+  const so=side.slice().sort((a,b)=>b-a);return {s:(so[0]+so[1]+so[2])/3*0.6+so[3]*0.4,min:so[3]};
+}
+const OUT_INSET=[0.047,0.033]; // white border as a share of the card's outside width / height
+function innerFromOuter(q){ // outside corners -> where the inner frame would be
+  const Hm=homography([[0,0],[1,0],[1,1],[0,1]],q),[bx,by]=OUT_INSET;
+  return [[bx,by],[1-bx,by],[1-bx,1-by],[bx,1-by]].map(([u,v])=>{const z=Hm[6]*u+Hm[7]*v+1;return [(Hm[0]*u+Hm[1]*v+Hm[2])/z,(Hm[3]*u+Hm[4]*v+Hm[5])/z]});
+}
+function outerCands(E,SW,SH){
+  const lines=houghLines(E,SW,SH,26),N=SW*SH,out=[];
+  const angDiff=(a,b)=>{let d=Math.abs(a-b)%Math.PI;return Math.min(d,Math.PI-d)};
+  const pairs=[];for(let i=0;i<lines.length;i++)for(let j=i+1;j<lines.length;j++){const A=lines[i],B=lines[j];if(angDiff(A.t,B.t)>0.18)continue;
+    const la=lineFromPolar(A),lb=lineFromPolar(B);const dist=Math.abs((lb.px-la.px)*(-la.dy)+(lb.py-la.py)*la.dx);if(dist<30)continue;pairs.push([la,lb,A.t,dist])}
+  for(let i=0;i<pairs.length;i++)for(let j=i+1;j<pairs.length;j++){const P=pairs[i],Q=pairs[j];if(Math.abs(angDiff(P[2],Q[2])-Math.PI/2)>0.35)continue;
+    const q=quadFromLines([P[0],Q[0],P[1],Q[1]]);if(!q||!isConvex(q))continue;
+    if(q.some(p=>p[0]<-SW*0.03||p[1]<-SH*0.03||p[0]>SW*1.03||p[1]>SH*1.03))continue;
+    const oq=orderQuad(q),asp=quadAspect(oq);if(Math.abs(asp-0.716)>0.1||!rightAngles(oq))continue;
+    const a=polyArea(oq);if(a<0.03*N||a>0.97*N)continue;
+    const es=edgeSupport(E,SW,SH,oq);if(es.min<0.45||es.s<0.6)continue;
+    out.push({q:oq,es:es.s,area:a,asp})}
+  return out;
+}
+function borderBand(Wimg,SW,SH,q){ // is there a plain white band (the border) just outside this outline? (pairs of samples agree)
+  const cx=q.reduce((a,p)=>a+p[0],0)/4,cy=q.reduce((a,p)=>a+p[1],0)/4,wid=(Math.hypot(q[1][0]-q[0][0],q[1][1]-q[0][1])+Math.hypot(q[2][0]-q[3][0],q[2][1]-q[3][1]))/2;let ok=0,n=0;
+  for(let i=0;i<4;i++){const a=q[i],b=q[(i+1)%4],L=Math.hypot(b[0]-a[0],b[1]-a[1]);let nx=-(b[1]-a[1])/L,ny=(b[0]-a[0])/L;const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;if((mx-cx)*nx+(my-cy)*ny<0){nx=-nx;ny=-ny}
+    for(let k=0;k<16;k++){const t=0.1+0.8*(k+0.5)/16,px=a[0]+(b[0]-a[0])*t,py=a[1]+(b[1]-a[1])*t;
+      const v1=sampleW(Wimg,SW,SH,px+nx*0.014*wid,py+ny*0.014*wid),v2=sampleW(Wimg,SW,SH,px+nx*0.03*wid,py+ny*0.03*wid);if(v1==null||v2==null)continue;n++;
+      if(Math.abs(v1-v2)<Math.max(12,0.12*Math.max(v1,v2)))ok++}}
+  return n<20||ok/n>=0.6;
+}
 function detectCard(src,opts){ // src canvas -> 4 corners [tl,tr,br,bl] in src coords, or null
   const SW=400, s=SW/src.width, SH=Math.round(src.height*s);
   const c=document.createElement("canvas");c.width=SW;c.height=SH;
@@ -770,8 +837,28 @@ function detectCard(src,opts){ // src canvas -> 4 corners [tl,tr,br,bl] in src c
         if(v>=0.45&&(!best||sc>best.sc))best={q,sc,v:v-inf}}}}
     if(best&&best.v>=0.85)break; // good enough: skip the slower fallbacks
   }
-  window.__lastDetect={n:nc,best:best&&best.v};
-  return best?best.q.map(([x,y])=>[x/s,y/s]):null;
+  // outside-edge check: confirms the white-border answer, catches full-art cards, and stops us from picking a part of a card
+  let pick=best?best.q:null,how=best?"border":"none";
+  if(!window.__noOuter&&!(best&&best.v>=0.8&&borderBand(W,SW,SH,best.q))){ // a clean white-bordered find needs no second opinion
+    const E=edgeMap(d,SW,SH),outs=outerCands(E,SW,SH).map(o=>({...o,inner:innerFromOuter(o.q)}));
+    const wq=q=>(Math.hypot(q[1][0]-q[0][0],q[1][1]-q[0][1])+Math.hypot(q[2][0]-q[3][0],q[2][1]-q[3][1]))/2;
+    const near=(a,b)=>Math.max(...a.map((p,i)=>Math.hypot(p[0]-b[i][0],p[1]-b[i][1])))<0.07*wq(b);
+    const inside=(q,c)=>{for(let i=0;i<4;i++){const a=q[i],b=q[(i+1)%4];if((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])<0)return false}return true};
+    if(window.__dbgMasks)window.__outs=outs.map(o=>[o.q.map(p=>p.map(Math.round)),+o.es.toFixed(2)]);
+    const cd=(a,b)=>Math.max(...a.map((p,i)=>Math.hypot(p[0]-b[i][0],p[1]-b[i][1])))/wq(b);
+    if(best&&outs.some(o=>near(o.inner,best.q))){how="border+edge"} // the card's outline sits just outside the white border: confirmed
+    else if(best&&!borderBand(W,SW,SH,best.q)&&outs.some(o=>cd(o.q,best.q)<0.06)){pick=innerFromOuter(best.q);how="outside-edge"} // no white border: we found the card's outside edge
+    else{
+      const cen=best?best.q.reduce((a,p)=>[a[0]+p[0]/4,a[1]+p[1]/4],[0,0]):null;
+      // a small find without a plain white band around it, inside a much bigger card outline, is part of that card (e.g. the stats box)
+      const bb=best&&borderBand(W,SW,SH,best.q);
+      let bigger=outs.filter(o=>o.es>=0.72&&(!best||(inside(o.q,cen)&&polyArea(best.q)<0.55*polyArea(o.inner)&&best.v<0.8)));
+      const top=Math.max(0,...bigger.map(o=>o.es));bigger=bigger.filter(o=>o.es>=top-0.08).sort((a,b)=>b.area-a.area); // the card's own outline is the biggest clean one
+      if(bigger.length){pick=bigger[0].inner;how="edge"}
+    }
+  }
+  window.__lastDetect={n:nc,best:best&&best.v,how};
+  return pick?pick.map(([x,y])=>[x/s,y/s]):null;
 }
 
 /* ---------- 2. straighten it ---------- */
@@ -876,7 +963,7 @@ function nameModes(cardHi){ // a light (silver/white) name banner needs a higher
   g.drawImage(cardHi,NAME.x*k,NAME.y*k,NAME.w*k,NAME.h*k,0,0,w,h);const d=g.getImageData(0,0,w,h).data,v=[];
   for(let i=0;i<w*h;i+=3){const r=d[i*4],gg=d[i*4+1],b=d[i*4+2],mn=Math.min(r,gg,b),mx=Math.max(r,gg,b);v.push(mn-0.6*(mx-mn))}
   const med=percentile(v,0.5),top=percentile(v,0.995);
-  return NAME_MODES; // (tried an extra cut for silver banners: no gain, the ability-text backup covers those)
+  return med>0.55*top&&med>110?[...NAME_MODES,"E"]:NAME_MODES; // light banner or full-art sky behind the name: add the outline cut
 }
 function nameBinary(cardHi,k,mode="A"){ // cardHi is k*500 x k*700
   const S=3,w=NAME.w*S,h=NAME.h*S;
@@ -889,9 +976,13 @@ function nameBinary(cardHi,k,mode="A"){ // cardHi is k*500 x k*700
   if(mode==="A")thr=Math.max(140,percentile(smp,0.97)*0.75);
   else if(mode==="B")thr=Math.max(100,otsu(smp,-160,256));
   else if(mode==="C")thr=Math.max(100,percentile(smp,0.995)*0.62);
-  else if(mode==="E")thr=Math.max(150,percentile(smp,0.995)*0.92);
+  else if(mode==="E")thr=percentile(smp,0.995)*0.8;
   else thr=Math.max(100,percentile(smp,0.995)*0.75);
   const m=new Uint8Array(N);for(let i=0;i<N;i++)m[i]=score[i]>thr?1:0;
+  if(mode==="E"){ // white letters with a dark outline on a light background: the outline (thickened a bit) separates them
+    const dk=percentile(smp,0.995)*0.55;
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x;if(score[i]>=dk)continue;
+      for(let dy=-1;dy<=1;dy++){const yy=y+dy;if(yy<0||yy>=h)continue;for(let dx=-1;dx<=1;dx++){const xx=x+dx;if(xx>=0&&xx<w)m[yy*w+xx]=0}}}}
   // keep bright shapes that are enclosed (letters), drop anything touching the strip edge
   const lab=new Int32Array(N),stack=new Int32Array(N),keep=[false];let nl=0;
   for(let i=0;i<N;i++){if(!m[i]||lab[i])continue;nl++;let sp=0;stack[sp++]=i;lab[i]=nl;let x0=w,y0=h,x1=0,y1=0,a=0;
@@ -1185,14 +1276,24 @@ function renderCard(c,chosen,how){
     const res=current.res,[tl,ts]=listTypeDisplay(c,res&&res.type,chosen);
     if(tl){const chip=$("typeOut");chip.textContent=tl;chip.className="type-chip "+ts}}
 }
+function combinePic(ms,pm){ // mix the name matches with what the picture says
+  if(!pm)return ms;ms=ms.slice();const pt=pm.top[0];
+  if(pm.ratio<PIC_SURE){const nameSure=ms[0]&&(ms[0].d<=0.15||(ms[0].d<=0.3&&(pm.ratio>=0.5||pm.top.some(t=>t.c===ms[0].c))));
+    if(ms[0]&&baseName(ms[0].c.n)===baseName(pt.c.n)){ms[0].d=Math.min(ms[0].d,0.05);return ms} // same card, the name says which version
+    if(!(nameSure&&ms[0].c!==pt.c)){const k=ms.findIndex(m=>m.c===pt.c);if(k>=0)ms.splice(k,1);ms.unshift({c:pt.c,d:0.05,s:-1,pic:true})}}
+  else{const near=new Set(pm.top.slice(0,5).map(x=>x.c));for(const m of ms)if(near.has(m.c)){m.s-=0.1;m.d=Math.max(0,m.d-0.1)}ms.sort((a,b)=>a.s-b.s);
+    if(!ms.length)ms=pm.top.slice(0,4).map((x,k)=>({c:x.c,d:k?0.6:0.42,s:k,pic:true}))} // nothing readable: best picture guesses
+  return ms;
+}
 function showMatch(readings,rawShown,source,forced){
   const nameEl=$("nameOut"),links=$("links"),others=$("others");links.innerHTML="";others.innerHTML="";$("priceLine").innerHTML="";$("cardMeta").innerHTML="";$("tradeAdd").hidden=true;if(current)current.match=null;
-  const res=current&&current.res,ms=forced?[{c:forced.card,d:forced.sure?0:0.4,s:0}]:matchCard(readings,res&&res.type,res&&res.margin>0.45);
+  const res=current&&current.res;let ms=forced?[{c:forced.card,d:forced.sure?0:0.4,s:0}]:matchCard(readings,res&&res.type,res&&res.margin>0.45);
+  if(!forced&&source!=="picked by you")ms=combinePic(ms,current&&current.pic);
   // brigade colour as a small tie-breaker between close names
   if(current&&current.boxBrig&&ms.length>1){const top3=current.boxBrig.slice(0,3).map(x=>x[0]);
     for(const m of ms)if(m.c.b.some(b=>top3.includes(b)))m.s-=0.02;ms.sort((a,b)=>a.s-b.s)}
   const top=ms[0],sure=top&&top.d<=0.3,maybe=top&&!sure&&top.d<=0.45;
-  $("nameDebug").textContent=(forced?`Matched by ${forced.how}${forced.ref?" (read “"+forced.ref+"”)":""} · `:"")+`read as “${rawShown||""}”`+(top?` · match distance ${top.d.toFixed(2)}`:"")+(source?` · ${source}`:"")+(current&&current.boxBrig?` · box colour looks ${current.boxBrig[0][0]}`:"");
+  $("nameDebug").textContent=(forced?`Matched by ${forced.how}${forced.ref?" (read “"+forced.ref+"”)":""} · `:"")+`read as “${rawShown||""}”`+(top?` · match distance ${top.d.toFixed(2)}`:"")+(source?` · ${source}`:"")+(current&&current.pic?` · picture ${current.pic.top[0].c.n} (${current.pic.ratio.toFixed(2)})`:"")+(current&&current.boxBrig?` · box colour looks ${current.boxBrig[0][0]}`:"");
   if(top&&(sure||maybe)){
     nameEl.className="name";nameEl.textContent=top.c.n;
     $("nameConf").textContent=sure?"":"Not 100% sure on this one, double check it.";
@@ -1204,12 +1305,13 @@ function showMatch(readings,rawShown,source,forced){
     if(tl){const chip=$("typeOut");chip.textContent=tl;chip.className="type-chip "+ts;
       $("typeConf").textContent=`From the card list · the icon looked like ${res?TYPES[res.type].label:"?"}`;}
   }else{
-    nameEl.className=rawShown?"name":"name pending";nameEl.textContent=rawShown||"Couldn't read the name";
+    const junk=!rawShown||rawShown.replace(/[^A-Za-z]/g,"").length<4;
+    nameEl.className=junk?"name pending":"name";nameEl.textContent=junk?"Couldn't read the name":rawShown;
     $("nameConf").textContent=CARDS?"Couldn't find this card. Try another pic or search the name.":"Card list didn't load.";
-    if(rawShown){const a=document.createElement("a");a.href=`${YTG}/search?q=${encodeURIComponent(rawShown)}`;a.target="_blank";a.rel="noopener";a.textContent="Search Your Turn Games";links.appendChild(a)}
+    if(!junk){const a=document.createElement("a");a.href=`${YTG}/search?q=${encodeURIComponent(rawShown)}`;a.target="_blank";a.rel="noopener";a.textContent="Search Your Turn Games";links.appendChild(a)}
   }
-  const alt=sure?[]:ms.filter(m=>m!==top||!maybe).slice(0,3);
-  if(alt.length){others.append("Not it? ");alt.forEach((m,i)=>{const b=document.createElement("button");b.type="button";b.className="pick";b.textContent=m.c.n;
+  const alt=sure?(forced&&forced.alts||[]).slice(0,3).map(c=>({c})):ms.filter(m=>m!==top||!maybe).slice(0,3);
+  if(alt.length){others.append(sure&&forced&&forced.alts?"Other versions: ":"Not it? ");alt.forEach((m,i)=>{const b=document.createElement("button");b.type="button";b.className="pick";b.textContent=m.c.n;
     b.onclick=()=>showMatch([m.c.n],rawShown,"picked by you");others.append(b);if(i<alt.length-1)others.append(", ")})}
 }
 function pickName(cands){ // cands: [{name,conf}] from each image variant
@@ -1293,20 +1395,24 @@ function prepareCard(src){
     work=cropFrom(src,x0,y0,x1-x0,y1-y0,2000);whiteBalance(work.c);work.x0=x0;work.y0=y0;
     const qc=q0.map(([x,y])=>[(x/coarse.s-x0)*work.s,(y/coarse.s-y0)*work.s]),qr=detectCard(work.c,{hint:qc});
     const area=q=>Math.abs(q.reduce((a,p,i)=>{const n=q[(i+1)%4];return a+p[0]*n[1]-n[0]*p[1]},0))/2;
-    quad=qr||qc; // the first look competes with the zoomed-in guesses; the best-checked edges win
+    const ratio=qr?area(qr)/area(qc):0;
+    quad=qr&&ratio>0.7&&ratio<1.43?qr:qc; // the first look competes with the zoomed-in guesses, but a wildly different size means the zoom latched onto a part
   }else{work=cropFrom(src,0,0,W,H,2400);whiteBalance(work.c)}
   const c=work.c,q=quad||[[0,0],[c.width,0],[c.width,c.height],[0,c.height]];
   const srcQuad=quad?q.map(([x,y])=>[x/work.s+(work.x0||0),y/work.s+(work.y0||0)]):null;
   const card=warp(c,q,CW,CH),cardHi=warp(c,q,CW*2,CH*2);
+  let cardOuter=null;if(quad){const [bx,by]=OUT_INSET,ex=bx/(1-2*bx),ey=by/(1-2*by),Hq=homography([[0,0],[1,0],[1,1],[0,1]],q);
+    const oq=[[-ex,-ey],[1+ex,-ey],[1+ex,1+ey],[-ex,1+ey]].map(([u,v])=>{const z=Hq[6]*u+Hq[7]*v+1;return [(Hq[0]*u+Hq[1]*v+Hq[2])/z,(Hq[3]*u+Hq[4]*v+Hq[5])/z]});cardOuter=warp(c,oq,CW,CH)}
   const F=quad&&!window.__noFlat?borderLight(c,q):null;if(F){flattenLight(card,F);flattenLight(cardHi,F)}
-  return {found:!!quad,card,cardHi,quad:srcQuad,flat:!!F};
+  return {found:!!quad,card,cardHi,cardOuter,quad:srcQuad,flat:!!F};
 }
 let current=null,scanId=0;
 async function scan(src,{from}={}){
   const id=++scanId;$("resultPanel").classList.remove("empty");
   setStatus("Finding the card…");await new Promise(r=>setTimeout(r,20));
-  const {found,card,cardHi}=prepareCard(src);
+  const prep=prepareCard(src),{found,card,cardHi}=prep;
   const res=classify(card);current={feat:features(card),res,card,boxBrig:nearestBrigades(boxColour(card))};
+  await withTimeout(loadPics(),4000,"pictures").catch(()=>null);current.pic=found?picMatch(card,prep.cardOuter):null;
   // draw
   const cv=$("cardView"),g=cv.getContext("2d");g.drawImage(card,0,0,cv.width,cv.height);
   const sx=cv.width/CW;g.lineWidth=2;g.setLineDash([5,3]);
@@ -1324,6 +1430,8 @@ async function scan(src,{from}={}){
   showBin(bins[0]);
   const nameEl=$("nameOut");nameEl.className="name pending";nameEl.textContent="Reading name…";$("nameConf").textContent="";$("links").innerHTML="";$("others").innerHTML="";$("priceLine").innerHTML="";$("tradeAdd").hidden=true;
   setStatus(found?"Card found. Reading the name…":"Couldn't see the card edges. Try a darker background behind the card. Reading anyway…");
+  if(current.pic&&current.pic.ratio<PIC_FAST){ // the picture alone is a clear match: done, no need to read the name
+    const pk=picPick(current.pic);showMatch([pk.c.n],"","matched by picture",{card:pk.c,sure:true,how:"picture",alts:pk.alts});setStatus("");return}
   current.nameColor=(()=>{const c=document.createElement("canvas");c.width=NAME.w*2;c.height=NAME.h*2;
     c.getContext("2d").drawImage(cardHi,(NAME.x-10)*2,(NAME.y-4)*2,(NAME.w+12)*2,(NAME.h+8)*2,0,0,c.width,c.height);return c})();
   onOcrProgress=m=>{if(id!==scanId)return;const step=OCR_STEPS[m.status]||m.status;
@@ -1331,6 +1439,7 @@ async function scan(src,{from}={}){
   const w=await getWorker();
   if(id!==scanId)return;
   const claudeOk=!!(await getSampler());$("askClaude").hidden=!claudeOk;
+  if(!w&&current.pic){showMatch([],"","name reader didn't load, picture only");setStatus("The name reader didn't load, so this is from the picture only.");return}
   if(!w){nameEl.textContent="Name reader didn't load";
     setStatus(ocrError+(claudeOk?" Tap Read name with Claude instead.":" Card type still works."),true);return}
   try{
@@ -1343,7 +1452,7 @@ async function scan(src,{from}={}){
     const readings=[best.fixedName,...cands.map(c=>c.name)];
     const say=t=>{if(id===scanId)setStatus(t)};
     let forced=await maybeLostSoul(cardHi,card,readings,res.type,w,say);
-    if(!forced&&id===scanId)forced=await maybeAbility(cardHi,readings,res.type,w,say);
+    if(!forced&&id===scanId&&!(current.pic&&current.pic.ratio<PIC_SURE))forced=await maybeAbility(cardHi,readings,res.type,w,say);
     if(id!==scanId)return;
     showMatch(readings,best.fixedName,"",forced);
     setStatus(best.conf<60&&claudeOk?"Not sure about the name? Tap Read name with Claude.":"");
@@ -1481,6 +1590,48 @@ async function onFile(e){
 
 /* Mini card pictures: packed 100 to a sheet (10 x 10 of 72x100) so the page ships ~53 images instead of 5,000. */
 let THUMBS=null; // {total, per, cols, tw, th}
+/* ---------- picture match: compare a tiny colour layout of the card with every card picture in the store ----------
+   pics.bin holds one 420-byte summary per store picture (made nightly from the same pictures). Must match picfeat.py. */
+const PGW=10,PGH=14,PD=3*PGW*PGH;let PICS=null,picsP=null,PIC_OWNER=null;
+function loadPics(){
+  if(!picsP)picsP=fetch("pics.bin").then(r=>{if(!r.ok)throw new Error("pics "+r.status);return r.arrayBuffer()}).then(b=>{PICS=new Int8Array(b);return PICS}).catch(e=>{console.warn("pictures",e);picsP=null;return null});
+  return picsP;
+}
+function picFeat(card){
+  const W=card.width,H=card.height,d=ctx2d(card).getImageData(0,0,W,H).data,m=0.05;
+  const x0=W*m,x1=W*(1-m),y0=H*m,y1=H*(1-m),sum=new Float64Array(PGW*PGH*3),cnt=new Float64Array(PGW*PGH);
+  const cx=new Int32Array(W);for(let x=0;x<W;x++)cx[x]=Math.floor((x+0.5-x0)/(x1-x0)*PGW);
+  for(let y=0;y<H;y++){const cy=Math.floor((y+0.5-y0)/(y1-y0)*PGH);if(cy<0||cy>=PGH)continue;
+    for(let x=0;x<W;x++){const c=cx[x];if(c<0||c>=PGW)continue;const k=cy*PGW+c,i=(y*W+x)*4;sum[k*3]+=d[i];sum[k*3+1]+=d[i+1];sum[k*3+2]+=d[i+2];cnt[k]++}}
+  const n=PGW*PGH,L=new Float64Array(n),A=new Float64Array(n),B=new Float64Array(n);let mean=0;
+  for(let k=0;k<n;k++){const r=sum[k*3]/cnt[k],g=sum[k*3+1]/cnt[k],b=sum[k*3+2]/cnt[k];L[k]=(r+g+b)/3;A[k]=r-g;B[k]=(r+g)/2-b;mean+=L[k]}
+  mean/=n;let sd=0;for(let k=0;k<n;k++)sd+=(L[k]-mean)**2;sd=Math.sqrt(sd/n);
+  const v=new Float32Array(PD),cl=x=>Math.max(-127,Math.min(127,Math.round(x)));
+  for(let k=0;k<n;k++){v[k]=cl((L[k]-mean)/(sd+1)*40);v[n+k]=cl(A[k]*0.5);v[2*n+k]=cl(B[k]*0.5)}
+  return v;
+}
+function baseName(n){return n.replace(/\s*\*.*$/,"").replace(/\s*\((?:[^()]*)\)\s*$/,"").trim().toLowerCase()}
+function picOwners(){ // picture slot -> [card, printing index]
+  if(PIC_OWNER)return PIC_OWNER;PIC_OWNER=new Map();
+  for(const c of CARDS||[])c.p.forEach((p,i)=>{if(p[4]!=null&&!PIC_OWNER.has(p[4]))PIC_OWNER.set(p[4],[c,i])});return PIC_OWNER;
+}
+function picMatch(card,outer){ // -> {top:[{c,i,d}] best per card name, ratio: best/second (small = sure)}
+  if(!PICS||!CARDS||!card)return null;
+  const q=picFeat(card),q2=outer?picFeat(outer):null,own=picOwners(),n=PICS.length/PD,best=new Map();
+  for(let t=0;t<n;t++){const o=t*PD;if(PICS[o]===-128)continue;const ow=own.get(t);if(!ow)continue;
+    let s=0;for(let j=0;j<PD;j++){const x=PICS[o+j]-q[j];s+=x*x}s/=PD;
+    if(q2){let s2=0;for(let j=0;j<PD;j++){const x=PICS[o+j]-q2[j];s2+=x*x}s2/=PD;if(s2<s)s=s2} // full-art pictures have no white border to trim
+    const b=best.get(ow[0]);if(!b||s<b.d)best.set(ow[0],{c:ow[0],i:ow[1],d:s})}
+  const top=[...best.values()].sort((a,b)=>a.d-b.d).slice(0,8);if(top.length<2)return null;
+  const b0=baseName(top[0].c.n),other=top.find(t=>baseName(t.c.n)!==b0)||top[top.length-1]; // reprints/promos of the same card share a picture
+  return {top,ratio:top[0].d/Math.max(1e-6,other.d),same:top.filter(t=>t!==top[0]&&baseName(t.c.n)===b0).map(t=>t.c)};
+}
+function picPick(pm){ // same picture, several listings (promo, banned-in-teams note...): prefer the plain one, offer the rest
+  const all=[pm.top[0].c,...pm.same],b=baseName(all[0].n),plain=all.find(c=>c.n.toLowerCase()===b)||all[0];
+  return {c:plain,alts:all.filter(c=>c!==plain)};
+}
+const PIC_FAST=0.6,PIC_SURE=0.75; // picture alone is enough below FAST; below SURE it beats an unclear name
+
 function thumbEl(ti,w){
   const d=document.createElement("span");d.className="thumb";d.style.width=w+"px";d.style.height=Math.round(w*100/72)+"px";
   if(THUMBS==null||ti==null||ti<0){d.classList.add("none");return d}
@@ -1575,16 +1726,18 @@ function showConfirm(k,c,alts,note,chosen){
 }
 async function identifyCard(src,say){ // photo -> best matches, for the trade screen
   say("Finding the card…");await new Promise(r=>setTimeout(r,20));
-  const {card,cardHi}=prepareCard(src);const res=classify(card);
+  const prepI=prepareCard(src),{card,cardHi,found}=prepI;const res=classify(card);
+  await withTimeout(loadPics(),4000,"pictures").catch(()=>null);const pm=found?picMatch(card,prepI.cardOuter):null;
+  if(pm&&pm.ratio<PIC_FAST){const pk=picPick(pm);return {matches:[{c:pk.c,d:0,s:0},...pk.alts.map(c=>({c,d:0.3,s:1}))],raw:pk.c.n,card}}
   say("Reading the name…");const w=await getWorker();
-  if(!w)return {matches:[],raw:"",error:ocrError,card};
+  if(!w)return {matches:combinePic([],pm),raw:"",error:pm?"":ocrError,card};
   const cands=[];for(const m of nameModes(cardHi)){const r=await withTimeout(w.recognize(nameBinary(cardHi,2,m)),20000,"Reading the name");cands.push({name:cleanName(r.data.text),conf:r.data.confidence})}
   const best=pickName(cands),readings=[best.fixedName,...cands.map(c=>c.name)];
   const ls=await maybeLostSoul(cardHi,card,readings,res.type,w,say);
   if(ls)return {matches:[{c:ls.card,d:ls.sure?0:0.4,s:0}],raw:best.fixedName,card};
-  const ab=await maybeAbility(cardHi,readings,res.type,w,say);
+  const ab=pm&&pm.ratio<PIC_SURE?null:await maybeAbility(cardHi,readings,res.type,w,say);
   if(ab)return {matches:[{c:ab.card,d:0,s:0}],raw:best.fixedName,card};
-  return {matches:matchCard(readings,res.type,res.margin>0.45),raw:best.fixedName,card};
+  return {matches:combinePic(matchCard(readings,res.type,res.margin>0.45),pm),raw:best.fixedName,card};
 }
 async function addByPhoto(k,file){
   const ad=$("adder-"+k);ad.hidden=false;$("searchWrap-"+k).hidden=true;$("confirm-"+k).hidden=true;
@@ -1985,7 +2138,7 @@ function showInstallTip(){
   BUILTIN=await buildBuiltins();rebuildRefs(BUILTIN);
   setStatus("");
   getWorker(); // start downloading the reader in the background
-  loadLexicon();loadCards().then(()=>{renderTrade();renderColl();checkSharedTrade();
+  loadLexicon();loadCards().then(()=>{setTimeout(loadPics,1500);renderTrade();renderColl();checkSharedTrade();
     const saved=lsGet(LIVE_KEY,null);if(!/^#live=/.test(location.hash)&&saved&&saved.room&&Date.now()-saved.at<6*3600e3)startLive(saved.room); // pick a live trade back up after a reload
     checkLiveLink()});
   window.addEventListener("hashchange",()=>{checkSharedTrade();checkLiveLink()});
