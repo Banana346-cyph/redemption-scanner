@@ -123,6 +123,21 @@ body.gated{overflow:hidden}
 .qty{display:flex;align-items:center;gap:6px}
 .qty button{min-height:36px;min-width:36px;padding:0;font:700 1.1rem var(--mono)}
 .qty b{font:500 1rem var(--mono);min-width:1.6em;text-align:center}
+.trend-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.trend{margin:0;font:700 .95rem var(--body);color:var(--muted);display:flex;align-items:center;gap:6px}
+.trend .arr{font-size:1.05rem;line-height:1}
+.trend.up,.chg.up{color:#52e3a0}.trend.down,.chg.down{color:var(--evil)}
+.trend small{font-weight:500;color:var(--muted)}
+.seg{display:flex;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden}
+.seg button{border:0;border-radius:0;padding:6px 10px;font:600 .8rem var(--body);background:transparent;color:var(--muted);min-height:0;box-shadow:none}
+.seg button[aria-pressed="true"]{background:var(--surface-2);color:var(--ink)}
+.chg{font:600 .76rem var(--mono);margin-left:6px}
+.coll-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.coll-tools .q{flex:1 1 180px;min-width:0}
+.sort-wrap{display:flex;align-items:center;gap:6px;flex:0 1 auto}
+.sort-wrap select{max-width:230px;background:var(--surface-2);color:var(--ink);border:1px solid var(--line-strong);border-radius:8px;padding:9px 10px;font:600 .9rem var(--body)}
+.coll-group{display:flex;justify-content:space-between;gap:8px;font:700 .82rem var(--body);color:var(--muted);text-transform:none;padding:8px 2px 2px;border-bottom:1px solid var(--line)}
+.coll-group span:last-child{font-family:var(--mono);color:var(--gold)}
 .coll-empty{color:var(--muted);font-size:.9rem;border:1.5px dashed var(--line);border-radius:8px;padding:18px;text-align:center}
 .shared{border-color:var(--accent);box-shadow:var(--glow-soft)}
 .restore{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:12px}
@@ -418,6 +433,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     <section class="panel trade-sum">
       <h2 class="label">My collection</h2>
       <div class="vs"><div><span class="small">Cards</span><b id="collCards" class="plain">0</b></div><span></span><div><span class="small">Value</span><b id="collValue">$0.00</b></div></div>
+      <div class="trend-row"><p class="trend" id="collTrend" aria-live="polite"></p>
+        <div class="seg" role="group" aria-label="Value change period"><button type="button" data-days="1">Day</button><button type="button" data-days="7" aria-pressed="true">Week</button><button type="button" data-days="30">Month</button></div></div>
       <p class="small">Saved on this phone. Prices update every night.</p>
     </section>
     <section class="panel" id="csPanel" aria-labelledby="h-cs">
@@ -459,7 +476,22 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
           <div class="row"><button type="button" class="primary" id="confirmAdd-coll">Add card</button><button type="button" id="confirmCancel-coll">Cancel</button></div>
         </div>
       </div>
-      <input id="collFilter" type="search" class="q" placeholder="Filter my cards" aria-label="Filter my cards" autocomplete="off">
+      <div class="coll-tools">
+        <input id="collFilter" type="search" class="q" placeholder="Filter my cards" aria-label="Filter my cards" autocomplete="off">
+        <label class="sort-wrap"><span class="small">Sort</span>
+          <select id="collSort" aria-label="Sort my cards">
+            <option value="name">Name (A to Z)</option>
+            <option value="value">Price (high to low)</option>
+            <option value="valueAsc">Price (low to high)</option>
+            <option value="total">Total value (price × copies)</option>
+            <option value="recent">Recently added</option>
+            <option value="qty">Most copies</option>
+            <option value="change">Biggest price change</option>
+            <option value="type">Card type</option>
+            <option value="brigade">Brigade</option>
+            <option value="set">Set</option>
+          </select></label>
+      </div>
       <div class="coll-list" id="collList"></div>
     </section>
     <section class="panel" aria-labelledby="h-backup">
@@ -1820,16 +1852,55 @@ let coll=(()=>{const c=lsGet(COLL_KEY,null);return Array.isArray(c)?c:[]})();
 function saveColl(){lsSet(COLL_KEY,coll)}
 function addToColl(item,qty=1){const e=coll.find(x=>x.h===item.h);if(e)e.qty+=qty;else coll.push({...item,qty});saveColl();renderColl();
   $("collSub").textContent=`Added ${item.n}${item.set?" ("+item.set+")":""}.`}
+
+/* ---------- collection value change: price-history.json lists each night's price changes (old -> new) ---------- */
+let PHIST=null;
+function loadPriceHistory(){return fetch("price-history.json").then(r=>r.ok?r.json():null).then(j=>{PHIST=j&&Array.isArray(j.days)?j:null;renderColl()}).catch(()=>{})}
+function trendDays(){const b=document.querySelector('.seg button[aria-pressed="true"]');return b?+b.dataset.days:7}
+function trendCutoff(days){const d=new Date(Date.now()-days*864e5);return d.toISOString().slice(0,10)}
+function priceThen(x,cut){ // what this card cost at the start of the period
+  let v=livePrice(x);if(!PHIST)return v;
+  for(let i=PHIST.days.length-1;i>=0;i--){const day=PHIST.days[i];if(day.d<=cut)break;const c=day.ch[x.h];if(c)v=c[0]}
+  return v;
+}
+function renderTrend(){
+  const el=$("collTrend");if(!el)return;el.className="trend";el.textContent="";
+  if(!coll.length){el.textContent="";return}
+  if(!PHIST||!PHIST.days.length){el.innerHTML="<small>Ups and downs show here after the nightly price updates start coming in.</small>";return}
+  const days=trendDays(),cut=trendCutoff(days);let now=0,then=0;
+  for(const x of coll){const a=livePrice(x),b=priceThen(x,cut);if(a==null||b==null)continue;now+=a*x.qty;then+=b*x.qty}
+  const label=days===1?"since yesterday":days===7?"this week":"this month";
+  const since=PHIST.days[0].d>cut?` <small>(tracking since ${new Date(PHIST.days[0].d+"T12:00:00").toLocaleDateString(undefined,{month:"short",day:"numeric"})})</small>`:"";
+  const diff=now-then;
+  if(!then||Math.abs(diff)<0.005){el.innerHTML=`<span class="arr">•</span> No change ${label}${since}`;return}
+  const pct=diff/then*100,up=diff>0;el.classList.add(up?"up":"down");
+  el.innerHTML=`<span class="arr" aria-hidden="true">${up?"▲":"▼"}</span><span>${up?"Up":"Down"} ${Math.abs(pct).toFixed(1)}% (${up?"+":"−"}${money(Math.abs(diff))}) ${label}</span>${since}`;
+}
+function cardChange(x){if(!PHIST)return 0;const a=livePrice(x),b=priceThen(x,trendCutoff(trendDays()));return a!=null&&b!=null?a-b:0}
 function renderColl(){
   const list=$("collList");list.innerHTML="";
-  const f=normName($("collFilter").value),items=coll.slice().sort((a,b)=>a.n.localeCompare(b.n)).filter(x=>!f||normName(x.n).includes(f));
+  const f=normName($("collFilter").value),mode=$("collSort").value||"name";
+  const order=new Map(coll.map((x,i)=>[x,i])),info=x=>{const hh=HANDLES.get(x.h),c=hh&&hh.c,pr=c&&c.p[hh.i];
+    const codes=pr&&pr[5]?pr[5].split("."):c?[...c.t]:[],main=codes.filter(k=>k!=="A")[0]||codes[0];
+    return {type:main?(CODE_LABEL[main]||main):"Other",brig:c&&c.b.length?(c.b.length>1?"Multicolor":c.b[0]):"No brigade"}};
+  const price=x=>{const v=livePrice(x);return v==null?-1:v},byName=(a,b)=>a.n.localeCompare(b.n);
+  const sorters={name:byName,value:(a,b)=>price(b)-price(a)||byName(a,b),valueAsc:(a,b)=>(price(a)<0?1e9:price(a))-(price(b)<0?1e9:price(b))||byName(a,b),
+    total:(a,b)=>price(b)*b.qty-price(a)*a.qty||byName(a,b),recent:(a,b)=>order.get(b)-order.get(a),change:(a,b)=>Math.abs(cardChange(b))-Math.abs(cardChange(a))||byName(a,b),qty:(a,b)=>b.qty-a.qty||byName(a,b)};
+  const groupOf={type:x=>info(x).type,brigade:x=>info(x).brig,set:x=>x.set||"No set"}[mode]||null;
+  let items=coll.filter(x=>!f||normName(x.n).includes(f));
+  const last=g=>/^(No |Other)/.test(g)?1:0; // "No brigade", "No set" go last
+  items.sort(groupOf?(a,b)=>{const ga=groupOf(a),gb=groupOf(b);return last(ga)-last(gb)||ga.localeCompare(gb)||byName(a,b)}:sorters[mode]||byName);
   if(!coll.length){const e=document.createElement("div");e.className="coll-empty";e.textContent="Nothing here yet. Scan a card and hit + My collection.";list.appendChild(e)}
+  let lastG=null;
   for(const x of items){
+    if(groupOf){const g=groupOf(x);if(g!==lastG){lastG=g;const its=items.filter(y=>groupOf(y)===g),h=document.createElement("div");h.className="coll-group";
+      const l=document.createElement("span");l.textContent=`${g} · ${its.reduce((a,y)=>a+y.qty,0)}`;const r=document.createElement("span");r.textContent=money(its.reduce((a,y)=>a+(livePrice(y)||0)*y.qty,0));h.append(l,r);list.appendChild(h)}}
     const row=document.createElement("div");row.className="coll-row";
     const info=document.createElement("div");info.style.minWidth="0";
     const nm=document.createElement("div");nm.className="cn";nm.textContent=x.n;
     const st=document.createElement("div");st.className="cs";st.textContent=x.set||"";
     const pr=document.createElement("div");pr.className="cp";const v=livePrice(x);pr.textContent=v==null?"No price":x.qty>1?`${money(v)} each · ${money(v*x.qty)}`:money(v);
+    {const dv=cardChange(x);if(Math.abs(dv)>=0.005){const c=document.createElement("span");c.className="chg "+(dv>0?"up":"down");c.textContent=(dv>0?"▲ ":"▼ ")+money(Math.abs(dv));c.title=dv>0?"Price went up":"Price went down";pr.appendChild(c)}}
     info.append(nm,st,pr);
     const q=document.createElement("div");q.className="qty";
     const minus=document.createElement("button");minus.type="button";minus.textContent="−";minus.setAttribute("aria-label",`One fewer ${x.n}`);
@@ -1839,7 +1910,7 @@ function renderColl(){
     plus.onclick=()=>{x.qty++;saveColl();renderColl()};
     q.append(minus,num,plus);row.append(thumbEl(x.ti,40),info,q);list.appendChild(row)}
   const n=coll.reduce((a,x)=>a+x.qty,0),val=coll.reduce((a,x)=>a+(livePrice(x)||0)*x.qty,0);
-  $("collCards").textContent=n;$("collValue").textContent=money(val);$("collCount").textContent=n?`(${n})`:"";
+  $("collCards").textContent=n;$("collValue").textContent=money(val);renderTrend();$("collCount").textContent=n?`(${n})`:"";
   if(typeof showBackupInfo==="function")showBackupInfo();
 }
 function openCollPicker(k){
@@ -2242,7 +2313,8 @@ function showInstallTip(){
   $("liveCodeIn").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();joinByCode()}});
   $("liveShare").onclick=shareLive;$("liveCopy").onclick=copyLive;$("liveLeave").onclick=()=>stopLive();
   $("liveReady").onclick=()=>{if(!live)return;live.ready=!live.ready;publish("state");setLiveStatus()};
-  setInterval(()=>live&&setLiveStatus(),10000);$("collFilter").oninput=renderColl;
+  setInterval(()=>live&&setLiveStatus(),10000);$("collFilter").oninput=renderColl;$("collSort").value=lsGet("rcs.collSort","name");if(!$("collSort").value)$("collSort").value="name";$("collSort").onchange=()=>{lsSet("rcs.collSort",$("collSort").value);renderColl()};
+  {const d=lsGet("rcs.trendDays",7);document.querySelectorAll(".seg button").forEach(b=>{b.setAttribute("aria-pressed",String(+b.dataset.days===d));b.onclick=()=>{document.querySelectorAll(".seg button").forEach(o=>o.setAttribute("aria-pressed",String(o===b)));lsSet("rcs.trendDays",+b.dataset.days);renderColl()}})}
   $("backupFile").onclick=saveBackupFile;$("backupCode").onclick=copyBackupCode;
   $("restoreOpen").onclick=()=>{$("restoreBox").hidden=!$("restoreBox").hidden};
   $("restoreRead").onclick=()=>previewRestore($("restoreText").value);
@@ -2274,7 +2346,7 @@ function showInstallTip(){
   BUILTIN=await buildBuiltins();rebuildRefs(BUILTIN);
   setStatus("");
   getWorker(); // start downloading the reader in the background
-  loadLexicon();loadCards().then(()=>{setTimeout(loadPics,1500);renderTrade();renderColl();checkSharedTrade();
+  loadLexicon();loadCards().then(()=>{setTimeout(loadPics,1500);loadPriceHistory();renderTrade();renderColl();checkSharedTrade();
     const saved=lsGet(LIVE_KEY,null);if(!/^#live=/.test(location.hash)&&saved&&saved.room&&Date.now()-saved.at<6*3600e3)startLive(saved.room); // pick a live trade back up after a reload
     checkLiveLink()});
   window.addEventListener("hashchange",()=>{checkSharedTrade();checkLiveLink()});
