@@ -132,6 +132,32 @@ body.gated{overflow:hidden}
 .seg button{border:0;border-radius:0;padding:6px 10px;font:600 .8rem var(--body);background:transparent;color:var(--muted);min-height:0;box-shadow:none}
 .seg button[aria-pressed="true"]{background:var(--surface-2);color:var(--ink)}
 .chg{font:600 .76rem var(--mono);margin-left:6px}
+.bulk-btn{width:100%}
+.bulk-tip{margin:-4px 0 0}
+.bulk{position:fixed;inset:0;z-index:50;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:env(safe-area-inset-top,0px) max(12px,env(safe-area-inset-right,0px)) env(safe-area-inset-bottom,0px) max(12px,env(safe-area-inset-left,0px))}
+.bulk-inner{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:12px;padding:12px 0 96px}
+.bulk-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.bulk-head h2{margin:0;font:800 1.4rem var(--display)}
+.bulk-photo{width:100%;height:auto;border-radius:10px;background:#000}
+.bulk-list{display:flex;flex-direction:column;gap:8px}
+.bulk-row{display:grid;grid-template-columns:auto auto 1fr;gap:10px;align-items:start;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.bulk-row.check{border-color:var(--warn)}
+.bulk-row.off{opacity:.5}
+.bulk-row .num{font:800 .85rem var(--body);min-width:26px;height:26px;border-radius:13px;background:var(--surface-2);display:flex;align-items:center;justify-content:center}
+.bulk-row .pics{display:flex;gap:6px}
+.bulk-row canvas{width:52px;height:73px;border-radius:4px}
+.bulk-row .info{min-width:0;display:flex;flex-direction:column;gap:4px}
+.bulk-row .bn{font:700 1rem/1.2 var(--body);word-break:break-word}
+.bulk-row .bp{font-size:.82rem;color:var(--muted)}
+.bulk-row .tag{align-self:flex-start;font:700 .72rem var(--body);padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted)}
+.bulk-row.check .tag{color:var(--warn)}
+.bulk-row .acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.bulk-row .acts{flex-wrap:wrap}@media (max-width:380px){.bulk-row{gap:6px;padding:8px}.bulk-row canvas{width:38px;height:53px}}.bulk-row .acts button{min-height:34px;padding:4px 8px;font-size:.8rem;flex:0 1 auto;white-space:nowrap}
+.bulk-row .alts{font-size:.85rem;color:var(--muted)}
+.bulk-row select{max-width:100%;background:var(--surface-2);color:var(--ink);border:1px solid var(--line-strong);border-radius:6px;padding:4px 6px}
+.bulk-foot{position:fixed;left:0;right:0;bottom:0;padding:10px max(12px,env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left,0px));background:var(--surface);border-top:1px solid var(--line-strong);display:flex;justify-content:center;z-index:51}
+.bulk-foot button{width:100%;max-width:720px}
+.bulk-missing{display:flex;flex-direction:column;gap:8px}
 .coll-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .coll-tools .q{flex:1 1 180px;min-width:0}
 .sort-wrap{display:flex;align-items:center;gap:6px;flex:0 1 auto}
@@ -439,8 +465,10 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     </section>
     <section class="panel" id="csPanel" aria-labelledby="h-cs">
       <h2 class="label" id="h-cs">Scan cards in</h2>
-      <p class="small" id="csIntro">Got a stack to add? Point your camera at a card, hit Add to collection, then show the next one.</p>
+      <p class="small" id="csIntro">Got a stack to add? Point your camera at a card, hit Add to collection, then show the next one. Or snap a whole pile at once with Bulk add.</p>
       <button type="button" class="primary" id="csStart">Start scanning</button>
+      <label class="btn file-btn bulk-btn"><input type="file" accept="image/*" id="bulkFile">Bulk add from one photo</label>
+      <p class="small bulk-tip">Bulk add: lay up to about 30 cards flat in rows (not overlapping, no bright glare) and take one photo. You'll check each card before adding.</p>
       <div class="cs-box" id="csBox" hidden>
         <div class="viewer cs-viewer" id="csViewer"><video id="csVideo" playsinline muted autoplay></video><canvas id="csOverlay" aria-hidden="true"></canvas></div>
         <p class="status" id="csStatus" role="status">Looking for a card…</p>
@@ -532,6 +560,19 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   </div>
 </div>
 
+<div class="bulk" id="bulk" hidden role="dialog" aria-modal="true" aria-labelledby="bulkTitle">
+  <div class="bulk-inner">
+    <div class="bulk-head"><h2 id="bulkTitle">Bulk add</h2><button type="button" id="bulkClose">Close</button></div>
+    <p class="status" id="bulkStatus" role="status"></p>
+    <canvas id="bulkCanvas" class="bulk-photo" aria-label="Your photo with each card it found numbered"></canvas>
+    <div class="bulk-list" id="bulkList"></div>
+    <div class="bulk-missing">
+      <button type="button" id="bulkMissBtn">Add a card it missed</button>
+      <div id="bulkMissBox" hidden><label class="label" for="bulkQ">Card name</label><input id="bulkQ" type="search" class="q" autocomplete="off" placeholder="Start typing a card name"><div class="results" id="bulkRes"></div></div>
+    </div>
+    <div class="bulk-foot"><button type="button" class="primary" id="bulkAdd">Add cards</button></div>
+  </div>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <script>
 "use strict";
@@ -854,8 +895,23 @@ function glareCut(Wimg,SW,SH,q){ // one side of the find runs along a very brigh
   const vals=[];for(let i=0;i<4;i++){const a=q[i],b=q[(i+1)%4];let t=0,n=0;for(let k=0;k<12;k++){const u=0.1+0.8*(k+0.5)/12;const v=sampleW(Wimg,SW,SH,a[0]+(b[0]-a[0])*u,a[1]+(b[1]-a[1])*u);if(v!=null){t+=v;n++}}vals.push(n?t/n:0)}
   const sv=vals.slice().sort((x,y)=>x-y);return sv[3]>sv[1]+35;
 }
+function pickCards(all){ // many cards in one photo: keep one outline per card
+  const inQ=(q,c)=>{for(let i=0;i<4;i++){const a=q[i],b=q[(i+1)%4];if((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])<0)return false}return true};
+  const cen=q=>q.reduce((a,p)=>[a[0]+p[0]/4,a[1]+p[1]/4],[0,0]);
+  const kept=[];
+  for(const c of all.slice().sort((a,b)=>b.sc-a.sc)){
+    const k=kept.findIndex(o=>inQ(o.q,cen(c.q))||inQ(c.q,cen(o.q)));
+    if(k<0){kept.push(c);continue}
+    const o=kept[k];
+    if(c.a<o.a&&c.a>o.a*0.7&&c.a<o.a*0.97&&c.q.every(p=>inQ(o.q,p)))kept[k]=c; // inner card inside a coloured sleeve
+    else if(c.a>o.a&&o.a>c.a*0.35&&o.a<c.a*0.68&&o.q.every(p=>inQ(c.q,p)))kept[k]=c; // we had only part of this card
+  }
+  if(kept.length<3)return kept;
+  const med=kept.map(c=>c.a).sort((a,b)=>a-b)[kept.length>>1];
+  return kept.filter(c=>c.a>med*0.45&&c.a<med*2.2); // cards in one photo are about the same size
+}
 function detectCard(src,opts){ // src canvas -> 4 corners [tl,tr,br,bl] in src coords, or null
-  const SW=400, s=SW/src.width, SH=Math.round(src.height*s);
+  const multi=!!(opts&&opts.multi),SW=multi?Math.min(src.width,opts.sw||900):400, s=SW/src.width, SH=Math.round(src.height*s);
   const c=document.createElement("canvas");c.width=SW;c.height=SH;
   const g=ctx2d(c);g.drawImage(src,0,0,SW,SH);
   const d=g.getImageData(0,0,SW,SH).data, N=SW*SH;
@@ -880,8 +936,8 @@ function detectCard(src,opts){ // src canvas -> 4 corners [tl,tr,br,bl] in src c
     ()=>{const lm=boxBlur(maxFilter(mx,SW,SH,12),SW,SH,5);return mk(i=>mx[i]>30&&mx[i]>=0.82*lm[i]&&sp[i]<0.25*mx[i]+6)},
     ()=>{const l6=boxBlur(maxFilter(mx,SW,SH,6),SW,SH,2),L=l30();return mk(i=>mx[i]>30&&mx[i]>=0.86*l6[i]&&mx[i]>=0.4*L[i]&&sp[i]<0.22*mx[i]+6)},
   ];
-  const STAGES=window.__MS?[[window.__MS,window.__ER||[0,2]]]:[[[0,2],[0]],[[0,1,2,3],[0,2]],[[4,5,6,7],[0,2]]];
-  let best=null;const seen=[],seen0=[],built={},strong=[];let nc=0;
+  const STAGES=window.__MS?[[window.__MS,window.__ER||[0,2]]]:multi?[[[0,2,1],[0]]]:[[[0,2],[0]],[[0,1,2,3],[0,2]],[[4,5,6,7],[0,2]]];
+  let best=null;const seen=[],seen0=[],built={},strong=[],all=[];let nc=0;
   const dup=(L,q,t)=>L.some(o=>o.every((p,i)=>Math.hypot(p[0]-q[i][0],p[1]-q[i][1])<t));
   const hint=opts&&opts.hint?[orderQuad(opts.hint.map(([x,y])=>[x*s,y*s]))]:[];
   function tryQ(q0,mi,r){nc++;
@@ -891,13 +947,16 @@ function detectCard(src,opts){ // src canvas -> 4 corners [tl,tr,br,bl] in src c
     if(dup(seen,q,2))return;seen.push(q);if(cardLike(W,SW,SH,q)<12)return;
     const v=verifyQuad(W,SW,SH,q);if(window.__dbgMasks)(window.__cands=window.__cands||[]).push([mi,r,q.map(p=>p.map(Math.round)),+v.toFixed(2),+asp.toFixed(3)]);
     const sc=v-inf-Math.abs(asp-0.716)*1.5+0.3*Math.sqrt(polyArea(q)/N);
+    if(mi==="edge"&&v<0.65)return; // straight-edge guesses must clearly have the white border outside
     if(v>=0.85&&!inf)strong.push({q,v,a:polyArea(q)});
+    if(multi&&v>=0.7&&!inf)all.push({q,v,sc,a:polyArea(q)});
     if(v>=0.45&&(!best||sc>best.sc))best={q,sc,v:v-inf}}
   for(const [ms,er] of STAGES){
     for(const mi of [-1,...ms]){const m=mi<0?null:(built[mi]||(built[mi]=MASKS[mi]()));
       for(const r of (mi<0?[0]:er)){for(const q0 of (mi<0?hint.splice(0):quadsFromMask(r?erode(m,SW,SH,r):m,SW,SH)))tryQ(q0,mi,r)}}
-    if(best&&best.v>=0.85)break; // good enough: skip the slower fallbacks
+    if(!multi&&best&&best.v>=0.85)break; // good enough: skip the slower fallbacks
   }
+  if(multi)return pickCards(all).map(c=>c.q.map(([x,y])=>[x/s,y/s]));
   // straight edges found directly in the photo: catches cards whose blob got cut up (glare streaks on sleeves, reflections)
   let E=null,outsRaw=null;const getOuts=()=>{if(!outsRaw){E=edgeMap(d,SW,SH);outsRaw=outerCands(E,SW,SH)}return outsRaw};
   if(!window.__noOuter&&(!best||best.v<0.9||!borderBand(W,SW,SH,best.q,true)))for(const o of getOuts().slice().sort((x,y)=>y.es-x.es).slice(0,30))tryQ(o.q,"edge",0);
@@ -1457,25 +1516,32 @@ function prepareCard(src){
   const [W,H]=srcSize(src);
   const coarse=cropFrom(src,0,0,W,H,1200);whiteBalance(coarse.c);
   const q0=detectCard(coarse.c);
+  return prepareFromQuad(src,q0&&q0.map(([x,y])=>[x/coarse.s,y/coarse.s]));
+}
+function prepareFromQuad(src,q0,opts){ // q0: rough corners in source pixels (or null) -> zoom in, refine, straighten
+  const [W,H]=srcSize(src);
   let work,quad=null;
   if(q0){
-    const xs=q0.map(p=>p[0]/coarse.s),ys=q0.map(p=>p[1]/coarse.s);
+    const xs=q0.map(p=>p[0]),ys=q0.map(p=>p[1]);
     const bw=Math.max(...xs)-Math.min(...xs),bh=Math.max(...ys)-Math.min(...ys),m=0.12;
     const x0=Math.max(0,Math.min(...xs)-bw*m),y0=Math.max(0,Math.min(...ys)-bh*m);
     const x1=Math.min(W,Math.max(...xs)+bw*m),y1=Math.min(H,Math.max(...ys)+bh*m);
-    work=cropFrom(src,x0,y0,x1-x0,y1-y0,2000);whiteBalance(work.c);work.x0=x0;work.y0=y0;
-    const qc=q0.map(([x,y])=>[(x/coarse.s-x0)*work.s,(y/coarse.s-y0)*work.s]),qr=detectCard(work.c,{hint:qc});
+    work=cropFrom(src,x0,y0,x1-x0,y1-y0,opts&&opts.max||2000);whiteBalance(work.c);work.x0=x0;work.y0=y0;
+    const qc=q0.map(([x,y])=>[(x-x0)*work.s,(y-y0)*work.s]),qr=opts&&opts.fast?null:detectCard(work.c,{hint:qc});
     const area=q=>Math.abs(q.reduce((a,p,i)=>{const n=q[(i+1)%4];return a+p[0]*n[1]-n[0]*p[1]},0))/2;
-    const ratio=qr?area(qr)/area(qc):0;
-    quad=qr&&ratio>0.7&&ratio<1.43?qr:qc; // the first look competes with the zoomed-in guesses, but a wildly different size means the zoom latched onto a part
+    const cen=q=>q.reduce((a,p)=>[a[0]+p[0]/4,a[1]+p[1]/4],[0,0]),cq=cen(qc),cr=qr&&cen(qr);
+    const ratio=qr?area(qr)/area(qc):0,shift=qr?Math.hypot(cr[0]-cq[0],cr[1]-cq[1])/Math.sqrt(area(qc)):9;
+    quad=qr&&ratio>0.7&&ratio<1.43&&shift<0.25?qr:qc; // the first look competes with the zoomed-in guesses, but a different size or spot means the zoom latched onto a part or a neighbour
   }else{work=cropFrom(src,0,0,W,H,2400);whiteBalance(work.c)}
   const c=work.c,q=quad||[[0,0],[c.width,0],[c.width,c.height],[0,c.height]];
   const srcQuad=quad?q.map(([x,y])=>[x/work.s+(work.x0||0),y/work.s+(work.y0||0)]):null;
-  const card=warp(c,q,CW,CH),cardHi=warp(c,q,CW*2,CH*2);
+  const card=warp(c,q,CW,CH),fast=!!(opts&&opts.fast);let cardHi=fast?null:warp(c,q,CW*2,CH*2);
   let cardOuter=null;if(quad){const [bx,by]=OUT_INSET,ex=bx/(1-2*bx),ey=by/(1-2*by),Hq=homography([[0,0],[1,0],[1,1],[0,1]],q);
     const oq=[[-ex,-ey],[1+ex,-ey],[1+ex,1+ey],[-ex,1+ey]].map(([u,v])=>{const z=Hq[6]*u+Hq[7]*v+1;return [(Hq[0]*u+Hq[1]*v+Hq[2])/z,(Hq[3]*u+Hq[4]*v+Hq[5])/z]});cardOuter=warp(c,oq,CW,CH)}
-  const F=quad&&!window.__noFlat?borderLight(c,q):null;if(F){flattenLight(card,F);flattenLight(cardHi,F)}
-  return {found:!!quad,card,cardHi,cardOuter,quad:srcQuad,flat:!!F};
+  const F=quad&&!window.__noFlat?borderLight(c,q):null;if(F){flattenLight(card,F);if(cardHi)flattenLight(cardHi,F)}
+  const out={found:!!quad,card,cardHi,cardOuter,quad:srcQuad,flat:!!F};
+  if(fast)out.hi=()=>{if(!out.cardHi){out.cardHi=warp(c,q,CW*2,CH*2);if(F)flattenLight(out.cardHi,F)}return out.cardHi}; // the big version is only needed for reading names
+  return out;
 }
 let current=null,scanId=0;
 async function scan(src,{from}={}){
@@ -1822,8 +1888,12 @@ function showConfirm(k,c,alts,note,chosen,auto){
 }
 async function identifyCard(src,say){ // photo -> best matches, for the trade screen
   say("Finding the card…");await new Promise(r=>setTimeout(r,20));
-  const prepI=prepareCard(src),{card,cardHi,found}=prepI;const res=classify(card);
-  await withTimeout(loadPics(),4000,"pictures").catch(()=>null);const pm=found?picMatch(card,prepI.cardOuter):null;
+  return identifyPrep(prepareCard(src),say);
+}
+async function identifyPrep(prepI,say,pmKnown){ // a straightened card -> best matches (picture first, then the name)
+  const {card,found}=prepI,cardHi=prepI.cardHi||prepI.hi();const res=classify(card);
+  if(pmKnown===undefined)await withTimeout(loadPics(),4000,"pictures").catch(()=>null);
+  const pm=pmKnown!==undefined?pmKnown:found?picMatch(card,prepI.cardOuter):null;
   if(pm&&pm.ratio<PIC_FAST){const pk=picPick(pm);return {matches:[{c:pk.c,d:0,s:0}],raw:pk.c.n,card,printing:pk.i}}
   say("Reading the name…");const w=await getWorker();
   if(!w)return {matches:combinePic([],pm),raw:"",error:pm?"":ocrError,card};
@@ -2198,6 +2268,110 @@ function csAdd(){
   $("csCount").textContent=`Added ${cs.added} card${cs.added===1?"":"s"} this time.`;
 }
 function csSkip(){$("csResult").hidden=true;cs.c=null;cs.state="looking";cs.ready=true;cs.steady=0;cs.last=null;csSay("Skipped. Looking for a card…")}
+
+/* ---------- bulk add: many cards in one photo ---------- */
+async function bulkFind(src,say){
+  const [W,H]=srcSize(src),pause=()=>new Promise(r=>setTimeout(r,15));
+  say("Finding the cards… this can take a few seconds.");await pause();
+  const big=cropFrom(src,0,0,W,H,1800);whiteBalance(big.c);
+  let qs=detectCard(big.c,{multi:true,sw:900}).map(q=>q.map(([x,y])=>[x/big.s,y/big.s]));
+  // reading order: top row first, left to right
+  const cen=q=>q.reduce((a,p)=>[a[0]+p[0]/4,a[1]+p[1]/4],[0,0]),hgt=q=>Math.hypot(q[3][0]-q[0][0],q[3][1]-q[0][1]);
+  const medH=qs.length?qs.map(hgt).sort((a,b)=>a-b)[qs.length>>1]:1;
+  qs.sort((a,b)=>{const ca=cen(a),cb=cen(b);return Math.abs(ca[1]-cb[1])>medH*0.5?ca[1]-cb[1]:ca[0]-cb[0]});
+  await withTimeout(loadPics(),6000,"pictures").catch(()=>null);
+  const items=[];
+  for(let i=0;i<qs.length;i++){say(`Matching card ${i+1} of ${qs.length}…`);await pause();
+    const prep=prepareFromQuad(src,qs[i],{max:900,fast:true}),pm=prep.found?picMatch(prep.card,prep.cardOuter):null;
+    items.push({quad:prep.quad||qs[i],prep,pm})}
+  return items;
+}
+
+let bulk=null; // {items:[{prep,pm,quad,c,i,sure,on,alts,checking}], img}
+function bulkSay(t){$("bulkStatus").textContent=t}
+async function bulkStart(file){
+  if(!file)return;const url=URL.createObjectURL(file);
+  $("bulk").hidden=false;document.body.style.overflow="hidden";$("bulkList").innerHTML="";$("bulkAdd").disabled=true;$("bulkAdd").textContent="Add cards";
+  $("bulkMissBox").hidden=true;bulkSay("Opening the photo…");
+  try{
+    const img=await loadImage(url);bulkDrawPhoto(img,[]);
+    const found=await bulkFind(img,bulkSay);
+    bulk={img,items:found.map(f=>{const it={...f,on:true,sure:false,c:null,i:0,alts:[]};
+      if(f.pm){const pk=picPick(f.pm),b0=baseName(pk.c.n);it.c=pk.c;it.i=pk.i;it.sure=f.pm.ratio<PIC_FAST;
+        it.alts=f.pm.top.map(t=>t.c).filter(c=>baseName(c.n)!==b0).slice(0,3)}
+      if(!it.c)it.on=false;return it})};
+    bulkRender();
+    const unsure=bulk.items.filter(it=>!it.sure);
+    bulkSay(`Found ${bulk.items.length} card${bulk.items.length===1?"":"s"}.`+(unsure.length?` Double-checking ${unsure.length} by reading the name…`:" Check the list, then add them."));
+    for(const it of unsure){if(!bulk)return;it.checking=true;bulkRender();
+      try{const r=await identifyPrep(it.prep,()=>{},it.pm);const top=r.matches[0];
+        if(top&&top.d<=0.45){const tb=baseName(top.c.n);it.c=top.c;it.sure=top.d<=0.3;it.on=true;
+          it.i=r.printing!=null?r.printing:(await pickPrinting(top.c,it.prep.card)).idx;
+          it.alts=r.matches.slice(1).map(m=>m.c).filter(c=>baseName(c.n)!==tb).concat(it.alts).filter((c,k,a)=>a.indexOf(c)===k&&c!==top.c).slice(0,3)}
+      }catch(e){console.warn("bulk read",e)}
+      it.checking=false;bulkRender()}
+    const left=bulk.items.filter(it=>!it.sure).length;
+    bulkSay(`Found ${bulk.items.length} card${bulk.items.length===1?"":"s"}.`+(left?` ${left} marked "Check this": make sure ${left===1?"it's":"they're"} right.`:" Check the list, then add them.")+" Missing one? Use Add a card it missed.");
+  }catch(e){bulkSay("Couldn't read that photo: "+e.message)}
+  finally{URL.revokeObjectURL(url)}
+}
+function bulkDrawPhoto(img,items){
+  const cv=$("bulkCanvas"),[W,H]=srcSize(img),sc=Math.min(1,900/Math.max(W,H));cv.width=Math.round(W*sc);cv.height=Math.round(H*sc);
+  const g=cv.getContext("2d");g.drawImage(img,0,0,cv.width,cv.height);
+  items.forEach((it,k)=>{const q=it.quad.map(([x,y])=>[x*sc,y*sc]),col=!it.on?"rgba(160,160,160,.9)":it.sure?"#52e3a0":"#ffb562";
+    g.beginPath();q.forEach(([x,y],j)=>j?g.lineTo(x,y):g.moveTo(x,y));g.closePath();g.lineWidth=3;g.strokeStyle=col;g.stroke();
+    const cx=q.reduce((a,p)=>a+p[0],0)/4,cy=q.reduce((a,p)=>a+p[1],0)/4,r=Math.max(11,cv.width/45);
+    g.fillStyle=col;g.beginPath();g.arc(cx,cy,r,0,7);g.fill();g.fillStyle="#111";g.font=`800 ${Math.round(r*1.1)}px system-ui`;g.textAlign="center";g.textBaseline="middle";g.fillText(String(k+1),cx,cy+1)});
+}
+function bulkRender(){
+  if(!bulk)return;bulkDrawPhoto(bulk.img,bulk.items);
+  const list=$("bulkList");list.innerHTML="";
+  bulk.items.forEach((it,k)=>{
+    const row=document.createElement("div");row.className="bulk-row"+(it.sure||!it.c?"":" check")+(it.on?"":" off");row.id="bulkRow"+k;
+    const num=document.createElement("span");num.className="num";num.textContent=k+1;
+    const pics=document.createElement("div");pics.className="pics";
+    const crop=document.createElement("canvas");crop.width=104;crop.height=146;crop.getContext("2d").drawImage(it.prep.card,0,0,104,146);crop.title="From your photo";
+    const pr=it.c&&(it.c.p[it.i]||it.c.p[0]);pics.append(crop,thumbEl(pr?pr[4]:null,innerWidth<380?38:52));
+    const info=document.createElement("div");info.className="info";
+    const nm=document.createElement("div");nm.className="bn";nm.textContent=it.c?it.c.n:"Couldn't tell which card this is";
+    const tag=document.createElement("span");tag.className="tag";tag.textContent=it.checking?"Reading the name…":!it.c?"Pick it or leave it out":it.sure?"Matched":"Check this";
+    info.append(nm,tag);
+    if(it.c){
+      const bp=document.createElement("div");bp.className="bp";
+      if(it.c.p.length>1){const sel=document.createElement("select");sel.setAttribute("aria-label",`Printing for card ${k+1}`);
+        it.c.p.forEach(([set,h,price],j)=>{const o=document.createElement("option");o.value=j;o.textContent=`${set||"Standard"} · ${money(price)}`;sel.appendChild(o)});
+        sel.value=String(it.i);sel.onchange=()=>{it.i=+sel.value;bulkRender()};bp.appendChild(sel)}
+      else bp.textContent=`${pr[0]||"Standard"} · ${money(pr[2])}`;
+      info.appendChild(bp)}
+    const acts=document.createElement("div");acts.className="acts";
+    if(it.c){const tg=document.createElement("button");tg.type="button";tg.textContent=it.on?"Leave out":"Include";tg.setAttribute("aria-pressed",String(!it.on));tg.onclick=()=>{it.on=!it.on;bulkRender();bulkCount()};acts.appendChild(tg)}
+    const fix=document.createElement("button");fix.type="button";fix.textContent="Wrong card?";acts.appendChild(fix);
+    info.appendChild(acts);
+    const fixBox=document.createElement("div");fixBox.className="alts";fixBox.hidden=!it.fixOpen;
+    if(it.alts.length){fixBox.append("Maybe: ");it.alts.forEach((c,j)=>{const b=document.createElement("button");b.type="button";b.className="pick";b.textContent=c.n;
+      b.onclick=()=>{const old=it.c;it.c=c;it.i=0;it.sure=true;it.on=true;it.fixOpen=false;it.alts=it.alts.filter(x=>x!==c).concat(old?[old]:[]);bulkRender();bulkCount()};fixBox.append(b);if(j<it.alts.length-1)fixBox.append(", ")})}
+    const q=document.createElement("input");q.type="search";q.className="q";q.placeholder="Or search the name";q.setAttribute("aria-label",`Search the right card for ${k+1}`);
+    const res=document.createElement("div");res.className="results";
+    q.oninput=()=>{res.innerHTML="";for(const c of searchCards(q.value).slice(0,5)){const b=document.createElement("button");b.type="button";b.className="pick";b.textContent=c.n;
+      b.onclick=()=>{it.c=c;it.i=0;it.sure=true;it.on=true;it.fixOpen=false;bulkRender();bulkCount()};res.appendChild(b)}};
+    fixBox.append(q,res);info.appendChild(fixBox);
+    fix.onclick=()=>{it.fixOpen=!it.fixOpen;fixBox.hidden=!it.fixOpen;if(it.fixOpen)q.focus()};
+    row.append(num,pics,info);list.appendChild(row)});
+  bulkCount();
+}
+function bulkCount(){const n=bulk?bulk.items.filter(it=>it.on&&it.c).length:0;const b=$("bulkAdd");b.disabled=!n;b.textContent=n?`Add ${n} card${n===1?"":"s"} to my collection`:"Nothing to add yet"}
+function bulkAddAll(){
+  if(!bulk)return;let n=0;
+  for(const it of bulk.items){if(!it.on||!it.c)continue;const [set,h,price,,ti]=it.c.p[it.i]||it.c.p[0];
+    const e=coll.find(x=>x.h===h);if(e)e.qty++;else coll.push({n:it.c.n,set:set||"",h:h||"",price:price==null?null:price,ti:ti==null?null:ti,qty:1});n++}
+  saveColl();renderColl();bulkClose();$("collSub").textContent=`Added ${n} card${n===1?"":"s"} from your photo.`;
+  if(navigator.vibrate)try{navigator.vibrate(40)}catch(e){}
+}
+function bulkClose(){bulk=null;$("bulk").hidden=true;document.body.style.overflow="";$("bulkFile").value=""}
+function bulkMissing(){const box=$("bulkMissBox");box.hidden=!box.hidden;if(!box.hidden)$("bulkQ").focus()}
+function bulkMissSearch(){const res=$("bulkRes");res.innerHTML="";for(const c of searchCards($("bulkQ").value).slice(0,6)){const b=document.createElement("button");b.type="button";b.className="pick";b.textContent=c.n;
+  b.onclick=()=>{if(!bulk)return;bulk.items.push({quad:[[0,0],[0,0],[0,0],[0,0]],prep:{card:bulkBlank()},pm:null,c,i:0,sure:true,on:true,alts:[],added:true});$("bulkQ").value="";res.innerHTML="";$("bulkMissBox").hidden=true;bulkRender()};res.appendChild(b)}}
+function bulkBlank(){const c=document.createElement("canvas");c.width=CW;c.height=CH;const g=c.getContext("2d");g.fillStyle="#2a1f40";g.fillRect(0,0,CW,CH);g.fillStyle="#a798c4";g.font="bold 120px system-ui";g.textAlign="center";g.fillText("+",CW/2,CH/2+40);return c}
 /* ---------- sharing a trade ---------- */
 function tradeLink(){
   const enc=a=>a.map(x=>x.h).filter(Boolean).join("~");
@@ -2305,6 +2479,7 @@ function showInstallTip(){
   $("askClaude").onclick=askClaude;
   $("tabScan").onclick=()=>setTab("scan");$("tabTrade").onclick=()=>setTab("trade");$("tabColl").onclick=()=>setTab("collection");
   $("shareTrade").onclick=shareTrade;
+  $("bulkFile").onchange=e=>bulkStart(e.target.files[0]);$("bulkClose").onclick=bulkClose;$("bulkAdd").onclick=bulkAddAll;$("bulkMissBtn").onclick=bulkMissing;$("bulkQ").oninput=bulkMissSearch;
   $("csStart").onclick=csStart;$("csStop").onclick=csStop;$("csAdd").onclick=csAdd;$("csSkip").onclick=csSkip;
   document.addEventListener("visibilitychange",()=>{if(document.hidden&&cs.state!=="off")csStop()});
   $("liveStart").onclick=()=>{stopQrScan();trade.theirs=[];saveTrade(false);startLive(newRoom())};
