@@ -89,6 +89,13 @@ select,input{color-scheme:dark}
 .links a{font:700 .9rem var(--body);text-decoration:none;border-radius:8px;padding:9px 12px;min-height:40px;display:inline-flex;align-items:center;border:1px solid var(--line-strong);color:var(--ink);background:var(--surface-2)}
 .links a:hover{border-color:var(--accent)}
 .links a.primary{background:#9d6bff;border-color:#9d6bff;color:#fff}
+.links a.tl{border-color:#c9a227}
+.price-line .tl-line{display:block;font:600 .9rem var(--body);color:var(--muted);margin-top:4px}
+#csLinks{margin:8px 0 0}#csLinks a{padding:6px 10px;min-height:34px;font-size:.82rem}
+.feedback{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;margin:28px 0 8px;padding:16px;border-top:1px solid var(--line-strong)}
+.feedback a{font:700 .95rem var(--body);color:var(--ink);text-decoration:none;border:1px solid var(--line-strong);background:var(--surface-2);border-radius:999px;padding:10px 18px;min-height:44px;display:inline-flex;align-items:center}
+.feedback a:hover{border-color:var(--accent)}
+.feedback span{font-size:.8rem;color:var(--muted)}
 .pick{font:700 .88rem var(--body);background:none;border:0;padding:2px 0;min-height:0;color:var(--accent);text-decoration:underline;text-underline-offset:3px;cursor:pointer;box-shadow:none}
 .teach{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .teach select{font:1rem var(--body);padding:10px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink);min-height:48px;flex:1 1 200px}
@@ -476,6 +483,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
           <div class="confirm-top"><div class="preview" id="csThumb"></div><div><div class="confirm-name" id="csName"></div><div class="small" id="csPrice"></div></div></div>
           <label class="label" for="csPrint">Printing</label>
           <select id="csPrint"></select>
+          <div class="links" id="csLinks"></div>
           <div class="row"><button type="button" class="primary" id="csAdd">Add to collection</button><button type="button" id="csSkip">Skip</button></div>
           <p class="small" id="csAlts"></p>
         </div>
@@ -545,6 +553,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     <div class="row"><button type="button" id="clearColl">Clear collection</button></div>
   </div>
   <p class="small install-tip" id="installTip" hidden></p>
+  <footer class="feedback"><a href="https://docs.google.com/forms/d/e/1FAIpQLScXycdd-6ds-KKXy2fbX1uqyZ2wf60o7jCF-DwWiDI6ZUpUlA/viewform" target="_blank" rel="noopener">Give feedback on RUT</a><span>Found a bug or have an idea? Takes about 2 minutes.</span></footer>
 </div>
 
 
@@ -1195,7 +1204,15 @@ function fixWord(w){
 }
 /* Card list from Your Turn Games: snap the reading to a real card and link to it. */
 let CARDS=null,HANDLES=new Map();
-const YTG="https://www.yourturngames.biz";
+const YTG="https://www.yourturngames.biz",TLG="https://threelionsgaming.com";
+let TL=null; // Three Lions Gaming: {YTG handle: [their handle, price, in stock]}
+const tlReady=fetch("tl.json").then(r=>r.ok?r.json():null).then(j=>{TL=j&&j.m||null}).catch(()=>{});
+function tlLink(name,h,label){ // a link to the same printing at Three Lions, or a search there
+  const t=TL&&h?TL[h]:null,a=document.createElement("a");a.target="_blank";a.rel="noopener";
+  if(t){a.href=`${TLG}/products/${encodeURIComponent(t[0])}`;a.textContent=(label||"View on Three Lions Gaming")+" · "+money(t[1])+(t[2]?"":" (out of stock)")}
+  else{a.href=`${TLG}/search?q=${encodeURIComponent(name)}&type=product`;a.textContent="Search Three Lions Gaming"}
+  return a;
+}
 const TYPE_CODE={good_character:"H",evil_character:"EC",good_enhancement:"GE",evil_enhancement:"EE",good_dominant:"D",evil_dominant:"D",good_fortress:"F",evil_fortress:"F",site:"S",artifact:"A",curse:"CU",covenant:"CO",lost_soul:"LS"};
 const CODE_LABEL={H:"Hero",EC:"Evil Character",GE:"Good Enhancement",EE:"Evil Enhancement",F:"Fortress",D:"Dominant",S:"Site",LS:"Lost Soul",A:"Artifact",CU:"Curse",CO:"Covenant",CI:"City"};
 function normName(t){return (t||"").toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim()}
@@ -1391,18 +1408,21 @@ async function pickPrinting(c,card){
     return {idx:i1,how:b1<0.8*b2?"picture":"guess",scores};
   }catch(e){console.warn("printing",e);return {idx:0,how:"default"}}
 }
+function tlPriceLine(h){const t=TL&&TL[h];return t?`<span class="tl-line">Three Lions Gaming: ${money(t[1])}${t[2]?"":' <span class="oos">· out of stock there</span>'}</span>`:""}
 function renderCard(c,chosen,how){
   const links=$("links");links.innerHTML="";
   const order=[chosen,...c.p.map((_,i)=>i).filter(i=>i!==chosen)];
   order.forEach((i,n)=>{const [set,h,price]=c.p[i];const a=document.createElement("a");a.href=`${YTG}/products/${encodeURIComponent(h)}`;a.target="_blank";a.rel="noopener";
-    a.className=n===0?"primary":"";a.textContent=(n===0?"View on Your Turn Games":"")+(set?(n===0?" · ":"")+set:"")+(price!=null?" · "+money(price):"");links.appendChild(a)});
+    a.className=n===0?"primary":"";a.textContent=(n===0?"View on Your Turn Games":"")+(set?(n===0?" · ":"")+set:"")+(price!=null?" · "+money(price):"");links.appendChild(a);
+    if(n===0){const t=tlLink(c.n,h);t.className="tl";links.appendChild(t)}});
   const [set,,price,av]=c.p[chosen];
   const others=c.p.filter((_,i)=>i!==chosen).map(x=>x[2]).filter(v=>v!=null);
   $("priceLine").innerHTML=(price!=null?money(price):"No price")+(av===0?' <span class="oos">· out of stock at YTG</span>':"")
-    +(others.length?` <span class="oos" style="color:var(--muted)">· other printings ${money(Math.min(...others))}${Math.max(...others)!==Math.min(...others)?"–"+money(Math.max(...others)):""}</span>`:"");
+    +(others.length?` <span class="oos" style="color:var(--muted)">· other printings ${money(Math.min(...others))}${Math.max(...others)!==Math.min(...others)?"–"+money(Math.max(...others)):""}</span>`:"")
+    +tlPriceLine(c.p[chosen][1]);
   const meta=[];if(c.b&&c.b.length)meta.push(["Brigade",c.b.join(" / ")]);if(set)meta.push(["Set",set+(c.p.length>1?(how==="picture"?" (matched by picture)":" (best guess, check the card)"):"")]);
   $("cardMeta").innerHTML="";for(const [k,v] of meta){const dt=document.createElement("dt"),dd=document.createElement("dd");dt.textContent=k;dd.textContent=v;$("cardMeta").append(dt,dd)}
-  if(current){current.match=c;current.printing=chosen;
+  if(current){current.match=c;current.printing=chosen;current.how=how;
     const res=current.res,[tl,ts]=listTypeDisplay(c,res&&res.type,chosen);
     if(tl){const chip=$("typeOut");chip.textContent=tl;chip.className="type-chip "+ts}}
 }
@@ -1438,7 +1458,7 @@ function showMatch(readings,rawShown,source,forced){
     const junk=!rawShown||rawShown.replace(/[^A-Za-z]/g,"").length<4;
     nameEl.className=junk?"name pending":"name";nameEl.textContent=junk?"Couldn't read the name":rawShown;
     $("nameConf").textContent=CARDS?"Couldn't find this card. Try another pic or search the name.":"Card list didn't load.";
-    if(!junk){const a=document.createElement("a");a.href=`${YTG}/search?q=${encodeURIComponent(rawShown)}`;a.target="_blank";a.rel="noopener";a.textContent="Search Your Turn Games";links.appendChild(a)}
+    if(!junk){const a=document.createElement("a");a.href=`${YTG}/search?q=${encodeURIComponent(rawShown)}`;a.target="_blank";a.rel="noopener";a.textContent="Search Your Turn Games";links.appendChild(a);const t=tlLink(rawShown,null);t.className="tl";links.appendChild(t)}
   }
   const tb=top?baseName(top.c.n):"",alt=sure?[]:ms.filter(m=>m!==top||!maybe).filter(m=>m===top||baseName(m.c.n)!==tb).slice(0,3); // other printings of the same card aren't "other cards"
   if(alt.length){others.append(sure&&forced&&forced.alts?"Other versions: ":"Not it? ");alt.forEach((m,i)=>{const b=document.createElement("button");b.type="button";b.className="pick";b.textContent=m.c.n;
@@ -2252,7 +2272,8 @@ function csShow(c,alts,idx,sure){
   cs.state="result";cs.c=c;cs.alts=alts;$("csResult").hidden=false;$("csName").textContent=c.n;
   const sel=$("csPrint");sel.innerHTML="";c.p.forEach(([set,h,price,av],i)=>{const o=document.createElement("option");o.value=i;o.textContent=`${set||"Standard"} · ${money(price)}${av===0?" · out of stock":""}`;sel.appendChild(o)});
   sel.value=String(idx||0);
-  const upd=()=>{const pr=c.p[+sel.value]||c.p[0];$("csThumb").innerHTML="";$("csThumb").appendChild(thumbEl(pr&&pr[4],90));$("csPrice").textContent=pr&&pr[2]!=null?money(pr[2]):"No price"};sel.onchange=upd;upd();autoPrinting(sel,c,true);
+  const upd=()=>{const pr=c.p[+sel.value]||c.p[0];$("csThumb").innerHTML="";$("csThumb").appendChild(thumbEl(pr&&pr[4],90));$("csPrice").textContent=(pr&&pr[2]!=null?money(pr[2]):"No price")+" at YTG"+(pr&&TL&&TL[pr[1]]?" · "+money(TL[pr[1]][1])+" at Three Lions":"");
+    const L=$("csLinks");L.innerHTML="";if(pr){const a=document.createElement("a");a.href=`${YTG}/products/${encodeURIComponent(pr[1])}`;a.target="_blank";a.rel="noopener";a.textContent="Your Turn Games";L.append(a,tlLink(c.n,pr[1],"Three Lions"))}};sel.onchange=upd;upd();autoPrinting(sel,c,true);
   const ab=$("csAlts");ab.innerHTML="";
   if(alts.length){ab.append("Not it? ");alts.forEach((m,i)=>{const b=document.createElement("button");b.type="button";b.className="pick";b.textContent=m.n;
     b.onclick=()=>csShow(m,alts.filter(x=>x!==m).concat([c]),0,true);ab.append(b);if(i<alts.length-1)ab.append(", ")})}
@@ -2521,7 +2542,7 @@ function showInstallTip(){
   BUILTIN=await buildBuiltins();rebuildRefs(BUILTIN);
   setStatus("");
   getWorker(); // start downloading the reader in the background
-  loadLexicon();loadCards().then(()=>{setTimeout(loadPics,1500);loadPriceHistory();renderTrade();renderColl();checkSharedTrade();
+  loadLexicon();loadCards().then(()=>{tlReady.then(()=>{if(current&&current.match&&current.printing!=null)renderCard(current.match,current.printing,current.how)});setTimeout(loadPics,1500);loadPriceHistory();renderTrade();renderColl();checkSharedTrade();
     const saved=lsGet(LIVE_KEY,null);if(!/^#live=/.test(location.hash)&&saved&&saved.room&&Date.now()-saved.at<6*3600e3)startLive(saved.room); // pick a live trade back up after a reload
     checkLiveLink()});
   window.addEventListener("hashchange",()=>{checkSharedTrade();checkLiveLink()});
