@@ -94,6 +94,23 @@ def match_three_lions(cards, tl_singles):
     return out
 
 
+def add_history(root, ch):
+    """Add today's price changes ({key: [old, new]}) to price-history.json, keeping the morning's starting price."""
+    hpath = os.path.join(root, "price-history.json")
+    hist = json.load(open(hpath)) if os.path.exists(hpath) else {"days": []}
+    today = time.strftime("%Y-%m-%d", time.gmtime())
+    prev = next((d for d in hist["days"] if d["d"] == today), None)
+    if prev:
+        for h, (o, n) in ch.items():
+            if h in prev["ch"]: o = prev["ch"][h][0]
+            prev["ch"][h] = [o, n]
+        prev["ch"] = {h: v for h, v in prev["ch"].items() if v[0] != v[1]}
+    else:
+        hist["days"].append({"d": today, "ch": ch})
+    hist["days"] = hist["days"][-90:]
+    json.dump(hist, open(hpath, "w"), separators=(",", ":"))
+
+
 def update_three_lions(root, cards):
     """Three Lions Gaming prices, kept in their own small file so a problem there never blocks the main update."""
     path = os.path.join(root, "tl.json")
@@ -105,6 +122,9 @@ def update_three_lions(root, cards):
     except Exception as e:  # their site is down or changed: keep yesterday's file
         print("Three Lions: skipped,", e); return
     old = json.load(open(path)) if os.path.exists(path) else {}
+    ch = {"t:" + h: [o[1], v[1]] for h, v in m.items() if (o := old.get("m", {}).get(h)) and o[1] != v[1]}
+    if ch:  # record Three Lions price changes next to the YTG ones (keys start with "t:") for the up/down arrow
+        add_history(root, ch)
     if old.get("m") == m:
         print("Three Lions: no changes"); return
     json.dump({"fetched": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "m": m}, open(path, "w"), separators=(",", ":"))
