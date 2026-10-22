@@ -405,7 +405,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
       <h2 class="label">Trade value</h2>
       <div class="vs"><div><span class="small">You give</span><b id="vsMine">$0.00</b></div><span class="arrow" aria-hidden="true">⇄</span><div><span class="small">You get</span><b id="vsTheirs">$0.00</b></div></div>
       <p class="verdict" id="verdict">Add cards to both sides to see who wins the trade.</p>
-      <p class="small">Prices from Your Turn Games as of <span id="priceDate">the saved card list</span>.</p>
+      <p class="small">Cheapest price from Your Turn Games or Three Lions Gaming, as of <span id="priceDate">the saved card list</span>.</p>
       <div class="row"><button type="button" id="shareTrade">Send as a link instead</button></div>
       <p class="small" id="shareMsg" role="status"></p>
     </section>
@@ -467,7 +467,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
       <div class="vs"><div><span class="small">Cards</span><b id="collCards" class="plain">0</b></div><span></span><div><span class="small">Value</span><b id="collValue">$0.00</b></div></div>
       <div class="trend-row"><p class="trend" id="collTrend" aria-live="polite"></p>
         <div class="seg" role="group" aria-label="Value change period"><button type="button" data-days="1">Day</button><button type="button" data-days="7" aria-pressed="true">Week</button><button type="button" data-days="30">Month</button></div></div>
-      <p class="small">Saved on this phone. Prices update every night.</p>
+      <p class="small">Saved on this phone. Values use the cheapest store price and update every night.</p>
     </section>
     <section class="panel" id="csPanel" aria-labelledby="h-cs">
       <h2 class="label" id="h-cs">Scan cards in</h2>
@@ -1407,8 +1407,10 @@ async function pickPrinting(c,card){
     return {idx:i1,how:b1<0.8*b2?"picture":"guess",scores};
   }catch(e){console.warn("printing",e);return {idx:0,how:"default"}}
 }
-function bestPrice(x){ // cheapest of the two stores for one printing, preferring a store that has it in stock: [price, in stock somewhere]
-  const t=TL&&x?TL[x[1]]:null,opts=[];if(x&&x[2]!=null)opts.push([x[2],x[3]!==0]);if(t&&t[1]!=null)opts.push([t[1],!!t[2]]);
+function bestPrice(x,ytg,tlp){ // cheapest of the two stores for one printing, preferring a store that has it in stock: [price, in stock somewhere]
+  // ytg / tlp: use these prices instead of today's (for "what did it cost a week ago")
+  const t=TL&&x?TL[x[1]]:null,opts=[],yp=ytg!==undefined?ytg:x&&x[2],tp=tlp!==undefined?tlp:t&&t[1];
+  if(x&&yp!=null)opts.push([yp,x[3]!==0]);if(t&&tp!=null)opts.push([tp,!!t[2]]);
   if(!opts.length)return [null,true];const inS=opts.filter(o=>o[1]),pool=inS.length?inS:opts;return [Math.min(...pool.map(o=>o[0])),inS.length>0]}
 function renderCard(c,chosen,how){
   const links=$("links");links.innerHTML="";
@@ -1824,7 +1826,7 @@ function priceSummary(c){
 const TRADE_KEY="rcs.trade.v1",SIDES=["mine","theirs"];
 let trade=(()=>{const t=lsGet(TRADE_KEY,null);return t&&Array.isArray(t.mine)&&Array.isArray(t.theirs)?t:{mine:[],theirs:[]}})();
 function saveTrade(sync=true){lsSet(TRADE_KEY,trade);if(sync&&live){if(live.ready)live.ready=false;queuePublish();setLiveStatus()}}
-function livePrice(x){const h=HANDLES.get(x.h);const v=h?h.c.p[h.i][2]:null;return v!=null?v:x.price}
+function livePrice(x){const h=HANDLES.get(x.h);const v=h?bestPrice(h.c.p[h.i])[0]:null;return v!=null?v:x.price} // cheapest store today
 const sideTotal=k=>trade[k].reduce((a,x)=>a+(livePrice(x)||0),0);
 function renderTrade(){
   for(const k of SIDES){
@@ -1949,9 +1951,10 @@ function loadPriceHistory(){return fetch("price-history.json").then(r=>r.ok?r.js
 function trendDays(){const b=document.querySelector('.seg button[aria-pressed="true"]');return b?+b.dataset.days:7}
 function trendCutoff(days){const d=new Date(Date.now()-days*864e5);return d.toISOString().slice(0,10)}
 function priceThen(x,cut){ // what this card cost at the start of the period
-  let v=livePrice(x);if(!PHIST)return v;
-  for(let i=PHIST.days.length-1;i>=0;i--){const day=PHIST.days[i];if(day.d<=cut)break;const c=day.ch[x.h];if(c)v=c[0]}
-  return v;
+  const now=livePrice(x),h=HANDLES.get(x.h);if(!PHIST||!h)return now;
+  const pr=h.c.p[h.i],t=TL&&TL[x.h];let y=pr[2],tp=t?t[1]:undefined;
+  for(let i=PHIST.days.length-1;i>=0;i--){const day=PHIST.days[i];if(day.d<=cut)break;const c=day.ch[x.h],ct=day.ch["t:"+x.h];if(c)y=c[0];if(ct&&t)tp=ct[0]}
+  const v=bestPrice(pr,y,tp)[0];return v!=null?v:now;
 }
 function renderTrend(){
   const el=$("collTrend");if(!el)return;el.className="trend";el.textContent="";
@@ -2542,7 +2545,7 @@ function showInstallTip(){
   BUILTIN=await buildBuiltins();rebuildRefs(BUILTIN);
   setStatus("");
   getWorker(); // start downloading the reader in the background
-  loadLexicon();loadCards().then(()=>{tlReady.then(()=>{if(current&&current.match&&current.printing!=null)renderCard(current.match,current.printing,current.how)});setTimeout(loadPics,1500);loadPriceHistory();renderTrade();renderColl();checkSharedTrade();
+  loadLexicon();loadCards().then(()=>{tlReady.then(()=>{if(current&&current.match&&current.printing!=null)renderCard(current.match,current.printing,current.how);if(TL){renderTrade();renderColl()}});setTimeout(loadPics,1500);loadPriceHistory();renderTrade();renderColl();checkSharedTrade();
     const saved=lsGet(LIVE_KEY,null);if(!/^#live=/.test(location.hash)&&saved&&saved.room&&Date.now()-saved.at<6*3600e3)startLive(saved.room); // pick a live trade back up after a reload
     checkLiveLink()});
   window.addEventListener("hashchange",()=>{checkSharedTrade();checkLiveLink()});
