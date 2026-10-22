@@ -27,14 +27,88 @@ def get(url, tries=4):
             time.sleep(2 * (i + 1))
 
 
-def fetch_products():
+def fetch_products(store=STORE):
     out = []
     for page in range(1, 400):
-        items = json.loads(get(f"{STORE}/products.json?limit=250&page={page}"))["products"]
+        items = json.loads(get(f"{store}/products.json?limit=250&page={page}"))["products"]
         if not items:
             break
         out += items
     return out
+
+
+TL_STORE = "https://threelionsgaming.com"
+
+
+def _n(s):
+    s = s.lower().replace("\u2018", "'").replace("\u2019", "'").replace("`", "'")
+    return re.sub(r"[^a-z0-9]", "", s)
+
+
+def _set(s):
+    s = _n(s)
+    return "roots" if s == "roots1" else s
+
+
+def _split(title):
+    m = re.match(r"^(.*?)\s*\(([^()]*)\)\s*$", title)
+    return (m.group(1).strip(), m.group(2)) if m else (title.strip(), "")
+
+
+def _base(title):
+    return _n(re.sub(r"\*[^*]*\*", "", title.split("(")[0]))
+
+
+def _loose(title):
+    return re.sub(r"promo|national|place|participant", "", _n(re.sub(r"\*[^*]*\*", "", title)))
+
+
+def match_three_lions(cards, tl_singles):
+    """Pair each Your Turn Games printing with the same printing at Three Lions Gaming.
+    Returns {ytg_handle: [tl_handle, price, in_stock]}. Same name + same set first, then a looser
+    match for promos whose titles are written a little differently."""
+    items = []
+    for p in tl_singles:
+        n, st = _split(p["title"]); v = p["variants"][0]
+        items.append({"k": _n(n) + "|" + _set(st), "b": _base(p["title"]), "l": _loose(p["title"]),
+                      "v": [p["handle"], round(float(v["price"]), 2), 1 if v.get("available") else 0]})
+    by_key, by_base = {}, {}
+    for t in items:
+        by_key.setdefault(t["k"], []).append(t); by_base.setdefault(t["b"], []).append(t)
+    used, out, left = set(), {}, []
+    for c in cards:
+        for pr in c[2]:
+            t = next((t for t in by_key.get(_n(c[0]) + "|" + _set(pr[0]), []) if t["v"][0] not in used), None)
+            if t:
+                used.add(t["v"][0]); out[pr[1]] = t["v"]
+            else:
+                left.append((f"{c[0]} ({pr[0]})", pr[1]))
+    for full, h in left:
+        cand = [t for t in by_base.get(_base(full), []) if t["v"][0] not in used]
+        lo = _loose(full)
+        m = [t for t in cand if lo in t["l"] or t["l"] in lo]
+        if len(m) != 1 and len(cand) == 1:
+            m = cand
+        if len(m) == 1:
+            used.add(m[0]["v"][0]); out[h] = m[0]["v"]
+    return out
+
+
+def update_three_lions(root, cards):
+    """Three Lions Gaming prices, kept in their own small file so a problem there never blocks the main update."""
+    path = os.path.join(root, "tl.json")
+    try:
+        singles = [p for p in fetch_products(TL_STORE) if p.get("product_type") == "Single"]
+        if len(singles) < 1000:
+            print(f"Three Lions: only {len(singles)} singles found; keeping old prices."); return
+        m = match_three_lions(cards, singles)
+    except Exception as e:  # their site is down or changed: keep yesterday's file
+        print("Three Lions: skipped,", e); return
+    old = json.load(open(path)) if os.path.exists(path) else {}
+    if old.get("m") == m:
+        print("Three Lions: no changes"); return
+    json.dump({"fetched": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "m": m}, open(path, "w"), separators=(",", ":"))
+    print(f"Three Lions: matched {len(m)} of {sum(len(c[2]) for c in cards)} printings")
 
 
 def thumb(src):
@@ -198,6 +272,7 @@ def main(root="."):
             hist["days"] = hist["days"][-90:]
             json.dump(hist, open(hpath, "w"), separators=(",", ":"))
             print("price changes:", len(ch))
+    update_three_lions(root, json.loads(json.dumps(cards)))
     if not os.path.exists(hpath):
         json.dump(hist, open(hpath, "w"), separators=(",", ":"))
     if old.get("cards") == json.loads(json.dumps(cards)) and old.get("thumbs") == out["thumbs"] and not todo:
