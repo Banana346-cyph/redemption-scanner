@@ -90,7 +90,6 @@ select,input{color-scheme:dark}
 .links a:hover{border-color:var(--accent)}
 .links a.primary{background:#9d6bff;border-color:#9d6bff;color:#fff}
 .links a.tl{border-color:#c9a227}
-.price-line .tl-line{display:block;font:600 .9rem var(--body);color:var(--muted);margin-top:4px}
 #csLinks{margin:8px 0 0}#csLinks a{padding:6px 10px;min-height:34px;font-size:.82rem}
 .feedback{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;margin:28px 0 8px;padding:16px;border-top:1px solid var(--line-strong)}
 .feedback a{font:700 .95rem var(--body);color:var(--ink);text-decoration:none;border:1px solid var(--line-strong);background:var(--surface-2);border-radius:999px;padding:10px 18px;min-height:44px;display:inline-flex;align-items:center}
@@ -1408,18 +1407,19 @@ async function pickPrinting(c,card){
     return {idx:i1,how:b1<0.8*b2?"picture":"guess",scores};
   }catch(e){console.warn("printing",e);return {idx:0,how:"default"}}
 }
-function tlPriceLine(h){const t=TL&&TL[h];return t?`<span class="tl-line">Three Lions Gaming: ${money(t[1])}${t[2]?"":' <span class="oos">· out of stock there</span>'}</span>`:""}
+function bestPrice(x){ // cheapest of the two stores for one printing, preferring a store that has it in stock: [price, in stock somewhere]
+  const t=TL&&x?TL[x[1]]:null,opts=[];if(x&&x[2]!=null)opts.push([x[2],x[3]!==0]);if(t&&t[1]!=null)opts.push([t[1],!!t[2]]);
+  if(!opts.length)return [null,true];const inS=opts.filter(o=>o[1]),pool=inS.length?inS:opts;return [Math.min(...pool.map(o=>o[0])),inS.length>0]}
 function renderCard(c,chosen,how){
   const links=$("links");links.innerHTML="";
   const order=[chosen,...c.p.map((_,i)=>i).filter(i=>i!==chosen)];
   order.forEach((i,n)=>{const [set,h,price]=c.p[i];const a=document.createElement("a");a.href=`${YTG}/products/${encodeURIComponent(h)}`;a.target="_blank";a.rel="noopener";
     a.className=n===0?"primary":"";a.textContent=(n===0?"View on Your Turn Games":"")+(set?(n===0?" · ":"")+set:"")+(price!=null?" · "+money(price):"");links.appendChild(a);
     if(n===0){const t=tlLink(c.n,h);t.className="tl";links.appendChild(t)}});
-  const [set,,price,av]=c.p[chosen];
-  const others=c.p.filter((_,i)=>i!==chosen).map(x=>x[2]).filter(v=>v!=null);
-  $("priceLine").innerHTML=(price!=null?money(price):"No price")+(av===0?' <span class="oos">· out of stock at YTG</span>':"")
-    +(others.length?` <span class="oos" style="color:var(--muted)">· other printings ${money(Math.min(...others))}${Math.max(...others)!==Math.min(...others)?"–"+money(Math.max(...others)):""}</span>`:"")
-    +tlPriceLine(c.p[chosen][1]);
+  const [set]=c.p[chosen],[price,inStock]=bestPrice(c.p[chosen]);
+  const others=c.p.filter((_,i)=>i!==chosen).map(x=>bestPrice(x)[0]).filter(v=>v!=null);
+  $("priceLine").innerHTML=(price!=null?money(price):"No price")+(!inStock?' <span class="oos">· out of stock</span>':"")
+    +(others.length?` <span class="oos" style="color:var(--muted)">· other printings ${money(Math.min(...others))}${Math.max(...others)!==Math.min(...others)?"–"+money(Math.max(...others)):""}</span>`:"");
   const meta=[];if(c.b&&c.b.length)meta.push(["Brigade",c.b.join(" / ")]);if(set)meta.push(["Set",set+(c.p.length>1?(how==="picture"?" (matched by picture)":" (best guess, check the card)"):"")]);
   $("cardMeta").innerHTML="";for(const [k,v] of meta){const dt=document.createElement("dt"),dd=document.createElement("dd");dt.textContent=k;dd.textContent=v;$("cardMeta").append(dt,dd)}
   if(current){current.match=c;current.printing=chosen;current.how=how;
@@ -2272,8 +2272,8 @@ function csShow(c,alts,idx,sure){
   cs.state="result";cs.c=c;cs.alts=alts;$("csResult").hidden=false;$("csName").textContent=c.n;
   const sel=$("csPrint");sel.innerHTML="";c.p.forEach(([set,h,price,av],i)=>{const o=document.createElement("option");o.value=i;o.textContent=`${set||"Standard"} · ${money(price)}${av===0?" · out of stock":""}`;sel.appendChild(o)});
   sel.value=String(idx||0);
-  const upd=()=>{const pr=c.p[+sel.value]||c.p[0];$("csThumb").innerHTML="";$("csThumb").appendChild(thumbEl(pr&&pr[4],90));$("csPrice").textContent=(pr&&pr[2]!=null?money(pr[2]):"No price")+" at YTG"+(pr&&TL&&TL[pr[1]]?" · "+money(TL[pr[1]][1])+" at Three Lions":"");
-    const L=$("csLinks");L.innerHTML="";if(pr){const a=document.createElement("a");a.href=`${YTG}/products/${encodeURIComponent(pr[1])}`;a.target="_blank";a.rel="noopener";a.textContent="Your Turn Games";L.append(a,tlLink(c.n,pr[1],"Three Lions"))}};sel.onchange=upd;upd();autoPrinting(sel,c,true);
+  const upd=()=>{const pr=c.p[+sel.value]||c.p[0];$("csThumb").innerHTML="";$("csThumb").appendChild(thumbEl(pr&&pr[4],90));const bp=bestPrice(pr);$("csPrice").textContent=bp[0]!=null?money(bp[0])+(bp[1]?"":" · out of stock"):"No price";
+    const L=$("csLinks");L.innerHTML="";if(pr){const a=document.createElement("a");a.href=`${YTG}/products/${encodeURIComponent(pr[1])}`;a.target="_blank";a.rel="noopener";a.textContent="Your Turn Games"+(pr[2]!=null?" · "+money(pr[2]):"");L.append(a,tlLink(c.n,pr[1],"Three Lions"))}};sel.onchange=upd;upd();autoPrinting(sel,c,true);
   const ab=$("csAlts");ab.innerHTML="";
   if(alts.length){ab.append("Not it? ");alts.forEach((m,i)=>{const b=document.createElement("button");b.type="button";b.className="pick";b.textContent=m.n;
     b.onclick=()=>csShow(m,alts.filter(x=>x!==m).concat([c]),0,true);ab.append(b);if(i<alts.length-1)ab.append(", ")})}
