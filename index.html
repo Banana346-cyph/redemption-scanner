@@ -139,6 +139,16 @@ body.gated{overflow:hidden}
 .seg button[aria-pressed="true"]{background:var(--surface-2);color:var(--ink)}
 .chg{font:600 .76rem var(--mono);margin-left:6px}
 .bulk-btn{width:100%}
+.sheet{z-index:40}
+.x-btn{width:44px;height:44px;min-height:44px;padding:0;border-radius:22px;font:700 1.15rem var(--body);display:inline-flex;align-items:center;justify-content:center;flex:none}
+.sheet-note{margin:-6px 0 0}
+.sheet-sum{margin:-4px 0 0;font:700 1rem var(--body);color:var(--muted)}
+.sheet-sum b{color:var(--gold)}
+.sheet-actions button{flex:1}
+.live-bar{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--line-strong);border-radius:12px;background:var(--surface)}
+.done-box{display:flex;flex-direction:column;gap:8px;padding:14px;border:1px solid var(--accent);border-radius:12px;background:var(--surface)}
+.done-box h3{margin:0;font:800 1.15rem var(--display)}
+.saved-trade{margin:0;font:600 .95rem var(--body)}
 .bulk-tip{margin:-4px 0 0}
 .bulk{position:fixed;inset:0;z-index:50;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:env(safe-area-inset-top,0px) max(12px,env(safe-area-inset-right,0px)) env(safe-area-inset-bottom,0px) max(12px,env(safe-area-inset-left,0px))}
 .bulk-inner{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:12px;padding:12px 0 96px}
@@ -375,6 +385,13 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
       <p class="small" id="liveJoinAppTip" hidden>Got RUT on your home screen? Open it instead, go to Trade, and type code <b id="liveJoinCode"></b> under Join a live trade.</p>
       <div class="row"><button type="button" class="primary" id="liveJoinBtn">Join live trade</button><button type="button" id="liveJoinNo">Not now</button></div>
     </section>
+    <section class="panel" id="oneTrade">
+      <h2 class="label">Trade on one phone</h2>
+      <p class="small" id="oneTradeSub">Add your cards and theirs on this phone to see who wins the trade.</p>
+      <p class="saved-trade" id="savedTrade" hidden></p>
+      <button type="button" class="primary" id="tradeOpen">Start a trade on one phone</button>
+      <p class="small" id="tradeDoneMsg" role="status"></p>
+    </section>
     <section class="panel live" id="livePanel">
       <div class="live-off" id="liveOff">
         <h2 class="label">Trade live</h2>
@@ -396,11 +413,92 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
           <p class="live-code" id="liveCode"></p>
           <div class="row"><button type="button" id="liveShare">Send link</button><button type="button" id="liveCopy">Copy link</button></div>
         </div>
+        <button type="button" class="primary" id="liveOpen">Open the trade</button>
         <div class="row"><button type="button" id="liveReady">I'm ready to trade</button></div>
         <p class="ready-line" id="liveReadyLine" role="status"></p>
         <button type="button" class="gate-skip" id="liveLeave">Leave live trade</button>
       </div>
     </section>
+  </div>
+
+  <div id="collView" class="view" role="tabpanel" aria-labelledby="tabColl" hidden>
+    <section class="panel trade-sum">
+      <h2 class="label">My collection</h2>
+      <div class="vs"><div><span class="small">Cards</span><b id="collCards" class="plain">0</b></div><span></span><div><span class="small">Value</span><b id="collValue">$0.00</b></div></div>
+      <div class="trend-row"><p class="trend" id="collTrend" aria-live="polite"></p>
+        <div class="seg" role="group" aria-label="Value change period"><button type="button" data-days="1">Day</button><button type="button" data-days="7" aria-pressed="true">Week</button><button type="button" data-days="30">Month</button></div></div>
+      <p class="small">Saved on this phone. Values use the cheapest store price and update every night.</p>
+      <button type="button" class="primary" id="collOpen">View collection</button>
+    </section>
+    <section class="panel" id="csPanel" aria-labelledby="h-cs">
+      <h2 class="label" id="h-cs">Scan cards in</h2>
+      <p class="small" id="csIntro">Got a stack to add? Point your camera at a card, hit Add to collection, then show the next one. Or snap a whole pile at once with Bulk add.</p>
+      <button type="button" class="primary" id="csStart">Start scanning</button>
+      <label class="btn file-btn bulk-btn"><input type="file" accept="image/*" id="bulkFile">Bulk add from one photo</label>
+      <p class="small bulk-tip">Bulk add: lay up to about 30 cards flat in rows (not overlapping, no bright glare) and take one photo. You'll check each card before adding.</p>
+      <div class="cs-box" id="csBox" hidden>
+        <div class="viewer cs-viewer" id="csViewer"><video id="csVideo" playsinline muted autoplay></video><canvas id="csOverlay" aria-hidden="true"></canvas></div>
+        <p class="status" id="csStatus" role="status">Looking for a card…</p>
+        <div class="cs-result" id="csResult" hidden>
+          <div class="confirm-top"><div class="preview" id="csThumb"></div><div><div class="confirm-name" id="csName"></div><div class="small" id="csPrice"></div></div></div>
+          <label class="label" for="csPrint">Printing</label>
+          <select id="csPrint"></select>
+          <div class="links" id="csLinks"></div>
+          <div class="row"><button type="button" class="primary" id="csAdd">Add to collection</button><button type="button" id="csSkip">Skip</button></div>
+          <p class="small" id="csAlts"></p>
+        </div>
+        <p class="small" id="csCount"></p>
+        <button type="button" id="csStop">Stop scanning</button>
+      </div>
+    </section>
+    <section class="panel" aria-labelledby="h-backup">
+      <h2 class="label" id="h-backup">Backup</h2>
+      <p class="small" id="backupInfo">Your collection is only saved on this phone, so back it up!</p>
+      <div class="row">
+        <button type="button" id="backupFile">Save backup file</button>
+        <button type="button" id="backupCode">Copy backup code</button>
+      </div>
+      <button type="button" id="restoreOpen">Restore a backup</button>
+      <div class="restore" id="restoreBox" hidden>
+        <label class="btn file-btn"><input type="file" id="restoreFile">Choose backup file</label>
+        <label class="label" for="restoreText">Or paste a backup code</label>
+        <textarea id="restoreText" class="q" rows="3" placeholder="RSC1:…" autocomplete="off" spellcheck="false"></textarea>
+        <button type="button" id="restoreRead">Read backup</button>
+        <div class="restore-preview" id="restorePreview" hidden>
+          <p id="restoreSummary"></p>
+          <div class="row"><button type="button" class="primary" id="restoreReplace">Replace my collection</button><button type="button" id="restoreMerge">Add to my collection</button></div>
+        </div>
+      </div>
+      <p class="small" id="backupMsg" role="status"></p>
+    </section>
+    <div class="row"><button type="button" id="clearColl">Clear collection</button></div>
+  </div>
+  <p class="small install-tip" id="installTip" hidden></p>
+  <footer class="feedback"><a href="https://docs.google.com/forms/d/e/1FAIpQLScXycdd-6ds-KKXy2fbX1uqyZ2wf60o7jCF-DwWiDI6ZUpUlA/viewform" target="_blank" rel="noopener">Give feedback on RUT</a><span>Found a bug or have an idea? Takes about 2 minutes.</span></footer>
+</div>
+
+
+<div class="gate" id="installGate" role="dialog" aria-modal="true" aria-labelledby="gateTitle" hidden>
+  <div class="gate-card">
+    <img src="icon-192.png" alt="" class="gate-icon" width="72" height="72">
+    <h2 id="gateTitle">Add RUT to your home screen</h2>
+    <p class="gate-sub">It works like a real app, works without signal, and the camera works better. Takes like 10 seconds.</p>
+    <ol class="gate-steps" id="gateSteps"></ol>
+    <button type="button" class="primary big" id="gateInstall" hidden>Install the app</button>
+    <p class="gate-done" id="gateDone" hidden></p>
+    <button type="button" class="gate-skip" id="gateSkip">Use it in the browser instead</button>
+  </div>
+</div>
+
+<div class="bulk sheet" id="tradeSheet" hidden role="dialog" aria-modal="true" aria-labelledby="tradeSheetTitle">
+  <div class="bulk-inner">
+    <div class="bulk-head"><h2 id="tradeSheetTitle">Trade</h2><button type="button" class="x-btn" id="tradeClose" aria-label="Close the trade (it stays saved)">✕</button></div>
+    <p class="small sheet-note" id="tradeSheetNote">Closing keeps this trade saved. Come back to finish or cancel it.</p>
+    <div class="live-bar" id="sheetLive" hidden>
+      <div class="live-status"><span class="dot" id="sheetLiveDot"></span><span id="sheetLiveStatus"></span></div>
+      <button type="button" id="sheetReady">I'm ready to trade</button>
+      <p class="ready-line" id="sheetReadyLine" role="status"></p>
+    </div>
     <section class="panel trade-sum" aria-live="polite">
       <h2 class="label">Trade value</h2>
       <div class="vs"><div><span class="small">You give</span><b id="vsMine">$0.00</b></div><span class="arrow" aria-hidden="true">⇄</span><div><span class="small">You get</span><b id="vsTheirs">$0.00</b></div></div>
@@ -458,38 +556,20 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
         </div>
       </div>
     </section>
-    <div class="row"><button type="button" id="clearTrade">Clear trade</button></div>
+    <div class="done-box" id="tradeDoneBox" hidden>
+      <h3>Trade done?</h3>
+      <p class="small" id="tradeDoneText"></p>
+      <button type="button" class="primary" id="tradeDoneColl">Update my collection and finish</button>
+      <button type="button" id="tradeDoneOnly">Just finish</button>
+      <button type="button" class="gate-skip" id="tradeDoneBack">Back to the trade</button>
+    </div>
+    <div class="row sheet-actions" id="tradeActions"><button type="button" class="primary" id="tradeComplete">Complete trade</button><button type="button" id="clearTrade">Cancel trade</button></div>
   </div>
-
-  <div id="collView" class="view" role="tabpanel" aria-labelledby="tabColl" hidden>
-    <section class="panel trade-sum">
-      <h2 class="label">My collection</h2>
-      <div class="vs"><div><span class="small">Cards</span><b id="collCards" class="plain">0</b></div><span></span><div><span class="small">Value</span><b id="collValue">$0.00</b></div></div>
-      <div class="trend-row"><p class="trend" id="collTrend" aria-live="polite"></p>
-        <div class="seg" role="group" aria-label="Value change period"><button type="button" data-days="1">Day</button><button type="button" data-days="7" aria-pressed="true">Week</button><button type="button" data-days="30">Month</button></div></div>
-      <p class="small">Saved on this phone. Values use the cheapest store price and update every night.</p>
-    </section>
-    <section class="panel" id="csPanel" aria-labelledby="h-cs">
-      <h2 class="label" id="h-cs">Scan cards in</h2>
-      <p class="small" id="csIntro">Got a stack to add? Point your camera at a card, hit Add to collection, then show the next one. Or snap a whole pile at once with Bulk add.</p>
-      <button type="button" class="primary" id="csStart">Start scanning</button>
-      <label class="btn file-btn bulk-btn"><input type="file" accept="image/*" id="bulkFile">Bulk add from one photo</label>
-      <p class="small bulk-tip">Bulk add: lay up to about 30 cards flat in rows (not overlapping, no bright glare) and take one photo. You'll check each card before adding.</p>
-      <div class="cs-box" id="csBox" hidden>
-        <div class="viewer cs-viewer" id="csViewer"><video id="csVideo" playsinline muted autoplay></video><canvas id="csOverlay" aria-hidden="true"></canvas></div>
-        <p class="status" id="csStatus" role="status">Looking for a card…</p>
-        <div class="cs-result" id="csResult" hidden>
-          <div class="confirm-top"><div class="preview" id="csThumb"></div><div><div class="confirm-name" id="csName"></div><div class="small" id="csPrice"></div></div></div>
-          <label class="label" for="csPrint">Printing</label>
-          <select id="csPrint"></select>
-          <div class="links" id="csLinks"></div>
-          <div class="row"><button type="button" class="primary" id="csAdd">Add to collection</button><button type="button" id="csSkip">Skip</button></div>
-          <p class="small" id="csAlts"></p>
-        </div>
-        <p class="small" id="csCount"></p>
-        <button type="button" id="csStop">Stop scanning</button>
-      </div>
-    </section>
+</div>
+<div class="bulk sheet" id="collSheet" hidden role="dialog" aria-modal="true" aria-labelledby="collSheetTitle">
+  <div class="bulk-inner">
+    <div class="bulk-head"><h2 id="collSheetTitle">My collection</h2><button type="button" class="x-btn" id="collClose" aria-label="Close collection">✕</button></div>
+    <p class="sheet-sum" id="collSheetSum"></p>
     <section class="panel side" aria-labelledby="h-coll">
       <div class="side-head"><div><h2 id="h-coll">Cards</h2><p class="small" id="collSub">Add cards by name, photo, or right after a scan.</p></div></div>
       <div class="row add-row">
@@ -529,45 +609,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
       </div>
       <div class="coll-list" id="collList"></div>
     </section>
-    <section class="panel" aria-labelledby="h-backup">
-      <h2 class="label" id="h-backup">Backup</h2>
-      <p class="small" id="backupInfo">Your collection is only saved on this phone, so back it up!</p>
-      <div class="row">
-        <button type="button" id="backupFile">Save backup file</button>
-        <button type="button" id="backupCode">Copy backup code</button>
-      </div>
-      <button type="button" id="restoreOpen">Restore a backup</button>
-      <div class="restore" id="restoreBox" hidden>
-        <label class="btn file-btn"><input type="file" id="restoreFile">Choose backup file</label>
-        <label class="label" for="restoreText">Or paste a backup code</label>
-        <textarea id="restoreText" class="q" rows="3" placeholder="RSC1:…" autocomplete="off" spellcheck="false"></textarea>
-        <button type="button" id="restoreRead">Read backup</button>
-        <div class="restore-preview" id="restorePreview" hidden>
-          <p id="restoreSummary"></p>
-          <div class="row"><button type="button" class="primary" id="restoreReplace">Replace my collection</button><button type="button" id="restoreMerge">Add to my collection</button></div>
-        </div>
-      </div>
-      <p class="small" id="backupMsg" role="status"></p>
-    </section>
-    <div class="row"><button type="button" id="clearColl">Clear collection</button></div>
-  </div>
-  <p class="small install-tip" id="installTip" hidden></p>
-  <footer class="feedback"><a href="https://docs.google.com/forms/d/e/1FAIpQLScXycdd-6ds-KKXy2fbX1uqyZ2wf60o7jCF-DwWiDI6ZUpUlA/viewform" target="_blank" rel="noopener">Give feedback on RUT</a><span>Found a bug or have an idea? Takes about 2 minutes.</span></footer>
-</div>
-
-
-<div class="gate" id="installGate" role="dialog" aria-modal="true" aria-labelledby="gateTitle" hidden>
-  <div class="gate-card">
-    <img src="icon-192.png" alt="" class="gate-icon" width="72" height="72">
-    <h2 id="gateTitle">Add RUT to your home screen</h2>
-    <p class="gate-sub">It works like a real app, works without signal, and the camera works better. Takes like 10 seconds.</p>
-    <ol class="gate-steps" id="gateSteps"></ol>
-    <button type="button" class="primary big" id="gateInstall" hidden>Install the app</button>
-    <p class="gate-done" id="gateDone" hidden></p>
-    <button type="button" class="gate-skip" id="gateSkip">Use it in the browser instead</button>
   </div>
 </div>
-
 <div class="bulk" id="bulk" hidden role="dialog" aria-modal="true" aria-labelledby="bulkTitle">
   <div class="bulk-inner">
     <div class="bulk-head"><h2 id="bulkTitle">Bulk add</h2><button type="button" id="bulkClose">Close</button></div>
@@ -1847,12 +1890,39 @@ function renderTrade(){
   $("verdict").textContent=!trade.mine.length&&!trade.theirs.length?"Add cards to both sides to see who wins the trade."
     :Math.abs(d)<0.005?"Even trade!":d>0?`You get ${money(d)} more in value.`:`You give ${money(-d)} more in value.`;
   const n=trade.mine.length+trade.theirs.length;$("tradeCount").textContent=n?`(${n})`:"";
+  const st=$("savedTrade");if(st){st.hidden=!n||!!live;
+    st.textContent=n?`Saved trade: you give ${trade.mine.length} card${trade.mine.length===1?"":"s"} (${money(a)}), you get ${trade.theirs.length} (${money(b)})`:"";
+    $("tradeOpen").textContent=n&&!live?"Open saved trade":"Start a trade on one phone";$("oneTrade").hidden=!!live}
+}
+/* ---------- full-screen sheets (trade, collection) with a close button ---------- */
+function openSheet(id){
+  const el=$(id);if(!el.hidden)return;el.hidden=false;el.scrollTop=0;document.body.classList.add("sheet-open");
+  try{history.pushState({rutSheet:id},"")}catch(e){}
+}
+function closeSheet(id,fromHistory){
+  const el=$(id);if(el.hidden)return;el.hidden=true;
+  if(id==="tradeSheet"){$("tradeDoneBox").hidden=true;$("tradeActions").hidden=false;closeAdder("mine");closeAdder("theirs")}
+  if(id==="collSheet")closeAdder("coll");
+  if(!$("tradeSheet").hidden||!$("collSheet").hidden)return;document.body.classList.remove("sheet-open");
+  if(!fromHistory)try{if(history.state&&history.state.rutSheet===id)history.back()}catch(e){}
+}
+function openTrade(){$("tradeDoneMsg").textContent="";openSheet("tradeSheet")}
+function finishTrade(updateColl){
+  let msg="Trade finished.";
+  if(updateColl){let out=0,inn=0,missing=0;
+    for(const x of trade.mine){const e=coll.find(y=>y.h===x.h);if(e){e.qty--;out++;if(e.qty<=0)coll.splice(coll.indexOf(e),1)}else missing++}
+    for(const x of trade.theirs){if(!x.h)continue;const e=coll.find(y=>y.h===x.h);if(e)e.qty++;else coll.push({n:x.n,set:x.set||"",h:x.h,price:x.price==null?null:x.price,ti:x.ti==null?null:x.ti,qty:1});inn++}
+    saveColl();renderColl();
+    msg=`Trade finished! Collection updated: ${out} card${out===1?"":"s"} out, ${inn} in.`+(missing?` (${missing} you gave weren't in your collection.)`:"")}
+  if(live)stopLive(true);
+  trade={mine:[],theirs:[]};saveTrade(false);renderLive();renderTrade();closeSheet("tradeSheet");$("tradeDoneMsg").textContent=msg;
 }
 function setTab(name){
   for(const [v,t,n] of [["scanView","tabScan","scan"],["tradeView","tabTrade","trade"],["collView","tabColl","collection"]]){
     $(v).hidden=name!==n;$(t).setAttribute("aria-selected",String(name===n))}
   if(name!=="trade"&&qrStream)stopQrScan();
   if(name!=="collection"&&typeof cs!=="undefined"&&cs.state!=="off")csStop();
+  for(const id of ["tradeSheet","collSheet"])if(!$(id).hidden){$(id).hidden=true;document.body.classList.remove("sheet-open")}
   try{if(!/^#(t|live)=/.test(location.hash))history.replaceState(null,"",name==="scan"?"#":"#"+name)}catch(e){}
   if(name==="collection")renderColl();
 }
@@ -2003,7 +2073,7 @@ function renderColl(){
     plus.onclick=()=>{x.qty++;saveColl();renderColl()};
     q.append(minus,num,plus);row.append(thumbEl(x.ti,40),info,q);list.appendChild(row)}
   const n=coll.reduce((a,x)=>a+x.qty,0),val=coll.reduce((a,x)=>a+(livePrice(x)||0)*x.qty,0);
-  $("collCards").textContent=n;$("collValue").textContent=money(val);renderTrend();$("collCount").textContent=n?`(${n})`:"";
+  $("collCards").textContent=n;$("collValue").textContent=money(val);$("collSheetSum").innerHTML=n?`${n} card${n===1?"":"s"} · worth <b>${money(val)}</b>`:"No cards yet. Add some below, or scan them in from the Collection tab.";$("collOpen").textContent=n?`View collection (${n})`:"View collection";renderTrend();$("collCount").textContent=n?`(${n})`:"";
   if(typeof showBackupInfo==="function")showBackupInfo();
 }
 function openCollPicker(k){
@@ -2188,6 +2258,8 @@ function setLiveStatus(){
   $("liveInvite").hidden=!!(live.peerSeen&&gap<70000);
   const me=live.ready,them=live.theirReady,b=$("liveReady");b.setAttribute("aria-pressed",String(me));b.textContent=me?"You're ready (tap to undo)":"I'm ready to trade";
   $("liveReadyLine").textContent=me&&them?"You're both ready, trade time!":them?"They're ready! Check the cards and hit ready.":me?"Waiting on them…":"";
+  $("sheetLiveDot").className=dot.className;$("sheetLiveStatus").textContent=txt;
+  const sb=$("sheetReady");sb.setAttribute("aria-pressed",String(me));sb.textContent=b.textContent;$("sheetReadyLine").textContent=$("liveReadyLine").textContent;
 }
 async function drawQr(url){
   const box=$("liveQr");box.innerHTML="";
@@ -2202,6 +2274,8 @@ function renderLive(){
   $("theirsSub").textContent=on?"Added on their phone":"What you get";
   $("addTheirs").hidden=on;
   $("shareTrade").hidden=on;
+  $("sheetLive").hidden=!on;$("tradeSheetTitle").textContent=on?"Live trade":"Trade";
+  $("tradeSheetNote").textContent=on?"Closing keeps you in the live trade. Leave it from the Trade tab, or hit Cancel trade.":"Closing keeps this trade saved. Come back to finish or cancel it.";
   if(on){drawQr(liveLink(live.room));$("liveCode").textContent=roomCode(live.room);setLiveStatus()}
 }
 async function shareLive(){
@@ -2419,7 +2493,7 @@ function checkSharedTrade(){
   $("sharedText").textContent=`Someone sent you a trade: you'd give ${give.length} card${give.length===1?"":"s"} (${money(tot(give))}) and get ${get.length} card${get.length===1?"":"s"} (${money(tot(get))}). Opening it replaces your current trade.`;
   $("sharedBanner").hidden=false;setTab("trade");
   const clear=()=>{$("sharedBanner").hidden=true;try{history.replaceState(null,"","#trade")}catch(e){}};
-  $("sharedLoad").onclick=()=>{trade={mine:give,theirs:get};saveTrade();renderTrade();clear()};
+  $("sharedLoad").onclick=()=>{trade={mine:give,theirs:get};saveTrade();renderTrade();clear();openTrade()};
   $("sharedDismiss").onclick=clear;
 }
 
@@ -2530,8 +2604,23 @@ function showInstallTip(){
   }
   document.querySelectorAll(".add-search").forEach(b=>b.onclick=()=>openSearch(b.dataset.side));
   document.querySelectorAll(".add-photo").forEach(inp=>inp.onchange=e=>{const f=e.target.files&&e.target.files[0];if(f)addByPhoto(inp.dataset.side,f);e.target.value=""});
-  $("clearTrade").onclick=()=>{trade=live?{mine:[],theirs:trade.theirs}:{mine:[],theirs:[]};saveTrade();renderTrade()};
-  const addFromScan=k=>{if(!current||!current.match)return;setTab("trade");showConfirm(k,current.match,[],"",current.printing||0);$("adder-"+k).scrollIntoView({block:"center"})};
+  {let armed=0;$("clearTrade").onclick=()=>{
+    if(!armed){armed=setTimeout(()=>{armed=0;$("clearTrade").textContent="Cancel trade"},4000);$("clearTrade").textContent=live?"Tap again to leave the live trade":"Tap again to cancel";return}
+    clearTimeout(armed);armed=0;$("clearTrade").textContent="Cancel trade";
+    if(live)stopLive(true);trade={mine:[],theirs:[]};saveTrade(false);renderLive();renderTrade();closeSheet("tradeSheet");$("tradeDoneMsg").textContent="Trade canceled."}}
+  $("tradeOpen").onclick=openTrade;$("liveOpen").onclick=openTrade;$("tradeClose").onclick=()=>closeSheet("tradeSheet");
+  $("sheetReady").onclick=()=>$("liveReady").click();
+  $("tradeComplete").onclick=()=>{
+    if(!trade.mine.length&&!trade.theirs.length){$("verdict").textContent="Add some cards first.";return}
+    const have=trade.mine.filter(x=>coll.some(y=>y.h===x.h)).length;
+    $("tradeDoneText").textContent=`Want me to update your collection? I'll take out the ${trade.mine.length} card${trade.mine.length===1?"":"s"} you gave`+(have<trade.mine.length?` (${have} of them are in your collection)`:"")+` and add the ${trade.theirs.length} card${trade.theirs.length===1?"":"s"} you got.`;
+    $("tradeDoneBox").hidden=false;$("tradeActions").hidden=true;$("tradeDoneBox").scrollIntoView({block:"center"})};
+  $("tradeDoneColl").onclick=()=>finishTrade(true);$("tradeDoneOnly").onclick=()=>finishTrade(false);
+  $("tradeDoneBack").onclick=()=>{$("tradeDoneBox").hidden=true;$("tradeActions").hidden=false};
+  $("collOpen").onclick=()=>{renderColl();openSheet("collSheet")};$("collClose").onclick=()=>closeSheet("collSheet");
+  window.addEventListener("popstate",()=>{for(const id of ["tradeSheet","collSheet"])closeSheet(id,true)});
+  document.addEventListener("keydown",e=>{if(e.key!=="Escape"||!$("bulk").hidden)return;if(!$("collSheet").hidden)closeSheet("collSheet");else if(!$("tradeSheet").hidden)closeSheet("tradeSheet")});
+  const addFromScan=k=>{if(!current||!current.match)return;setTab("trade");openTrade();showConfirm(k,current.match,[],"",current.printing||0);$("adder-"+k).scrollIntoView({block:"center"})};
   $("addMine").onclick=()=>addFromScan("mine");$("addTheirs").onclick=()=>addFromScan("theirs");
   $("livePanel").hidden=!document.querySelector('link[rel="manifest"]'); // live trade needs the installed/GitHub app
   showInstallTip();showGate();
