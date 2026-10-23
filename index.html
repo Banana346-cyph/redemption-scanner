@@ -237,6 +237,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .tabs button{flex:1;min-height:44px;border:0;border-radius:8px;background:none;font:700 1rem var(--display);color:var(--muted)}
 .tabs button[aria-selected="true"]{background:#9d6bff;color:#fff}
 .tab-count{font:500 .78rem var(--mono);color:var(--gold)}
+.tabs button{flex:1 1 auto;min-width:0;padding:0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:360px){.tabs button{font-size:.88rem}.tab-count{font-size:.68rem}}
 .view{display:flex;flex-direction:column;gap:18px}
 /* trade */
 .side-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
