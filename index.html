@@ -33,7 +33,7 @@
 html,body{background:var(--bg);color:var(--ink)}
 body{font:16px/1.5 var(--body);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 56px;
   background:linear-gradient(180deg,#1d1030,var(--bg) 320px) no-repeat,var(--bg);min-height:100%}
-.wrap{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+.wrap{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:18px;overflow-x:clip}
 header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-top:4px}
 h1{font:900 1.9rem/1 var(--display);margin:0}
 h1 span{color:var(--accent)}
@@ -236,7 +236,36 @@ details.tools>summary{border:0}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
 .tabs button{flex:1;min-height:44px;border:0;border-radius:8px;background:none;font:700 1rem var(--display);color:var(--muted)}
 .tabs button[aria-selected="true"]{background:#9d6bff;color:#fff}
-.tab-count{font:500 .78rem var(--mono);color:var(--gold)}
+.tab-count{font:500 .78rem var(--mono);color:var(--gold);display:inline-block}
+/* sliding highlight behind the selected tab (falls back to the plain purple button until JS places it) */
+.tabs.ind-ready button[aria-selected="true"]{background:none}
+.tabs button{position:relative;z-index:1}
+.tab-ind{position:absolute;top:4px;bottom:4px;left:0;width:0;border-radius:8px;background:#9d6bff;z-index:0;opacity:0;pointer-events:none}
+.tabs.ind-ready .tab-ind{opacity:1}
+@media (prefers-reduced-motion:no-preference){
+  .tabs.ind-ready .tab-ind{transition:transform .32s cubic-bezier(.3,1.25,.5,1),width .32s cubic-bezier(.3,1.25,.5,1)}
+  .tabs button{transition:color .2s}
+  .view.in-r{animation:viewInR .3s cubic-bezier(.2,.8,.2,1)}
+  .view.in-l{animation:viewInL .3s cubic-bezier(.2,.8,.2,1)}
+  @keyframes viewInR{from{opacity:0;transform:translateX(22px)}to{opacity:1;transform:none}}
+  @keyframes viewInL{from{opacity:0;transform:translateX(-22px)}to{opacity:1;transform:none}}
+  .bulk:not([hidden]){animation:sheetUp .32s cubic-bezier(.2,.8,.2,1)}
+  .bulk.closing{animation:sheetDown .2s ease-in forwards;pointer-events:none}
+  @keyframes sheetUp{from{opacity:0;transform:translateY(48px)}to{opacity:1;transform:none}}
+  @keyframes sheetDown{to{opacity:0;transform:translateY(48px)}}
+  #resultPanel.reveal .result{animation:rise .38s cubic-bezier(.2,.8,.2,1)}
+  #resultPanel.reveal .result-actions,#resultPanel.reveal .links{animation:rise .38s .08s cubic-bezier(.2,.8,.2,1) both}
+  @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  .tile.pop{animation:pop .36s cubic-bezier(.3,1.5,.5,1)}
+  @keyframes pop{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:none}}
+  .bump{animation:bump .42s cubic-bezier(.3,1.6,.5,1)}
+  @keyframes bump{35%{transform:scale(1.12)}}
+  .coll-list.stagger>*{animation:rise .32s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0)*28ms)}
+  .done-box:not([hidden]),.cs-result:not([hidden]){animation:rise .3s cubic-bezier(.2,.8,.2,1)}
+  button,.btn,.links a{transition:transform .12s ease,background-color .2s,border-color .2s}
+  button:active:not(:disabled),.btn:active,.links a:active{transform:scale(.96)}
+  .tabs button:active{transform:none}
+}
 .tabs button{flex:1 1 auto;min-width:0;padding:0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media (max-width:360px){.tabs button{font-size:.88rem}.tab-count{font-size:.68rem}}
 .view{display:flex;flex-direction:column;gap:18px}
@@ -294,6 +323,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     <button type="button" role="tab" id="tabScan" aria-selected="true" aria-controls="scanView">Scan</button>
     <button type="button" role="tab" id="tabTrade" aria-selected="false" aria-controls="tradeView">Trade <span class="tab-count" id="tradeCount"></span></button>
     <button type="button" role="tab" id="tabColl" aria-selected="false" aria-controls="collView">Collection <span class="tab-count" id="collCount"></span></button>
+    <span class="tab-ind" id="tabInd" aria-hidden="true"></span>
   </nav>
   <div id="scanView" class="view" role="tabpanel" aria-labelledby="tabScan">
 
@@ -1483,6 +1513,7 @@ function combinePic(ms,pm){ // mix the name matches with what the picture says
   return ms;
 }
 function showMatch(readings,rawShown,source,forced){
+  if(!calm())replay($("resultPanel"),"reveal");
   const nameEl=$("nameOut"),links=$("links"),others=$("others");links.innerHTML="";others.innerHTML="";$("priceLine").innerHTML="";$("cardMeta").innerHTML="";$("tradeAdd").hidden=true;if(current)current.match=null;
   const res=current&&current.res;let ms=forced?[{c:forced.card,d:forced.sure?0:0.4,s:0}]:matchCard(readings,res&&res.type,res&&res.margin>0.45);
   if(!forced&&source!=="picked by you")ms=combinePic(ms,current&&current.pic);
@@ -1875,9 +1906,9 @@ function livePrice(x){const h=HANDLES.get(x.h);const v=h?bestPrice(h.c.p[h.i])[0
 const sideTotal=k=>trade[k].reduce((a,x)=>a+(livePrice(x)||0),0);
 function renderTrade(){
   for(const k of SIDES){
-    const tiles=$("tiles-"+k);tiles.innerHTML="";
+    const tiles=$("tiles-"+k),had=+(tiles.dataset.n||0);tiles.innerHTML="";tiles.dataset.n=trade[k].length;setTimeout(()=>{tiles.dataset.ready="1"},0);
     if(!trade[k].length){const e=document.createElement("div");e.className="empty";e.textContent=live&&k==="theirs"?"Their cards show up here when they add them":"No cards yet";tiles.appendChild(e)}
-    trade[k].forEach((x,i)=>{const b=document.createElement("button");b.type="button";b.className="tile";b.setAttribute("aria-label",`Remove ${x.n}${x.set?" ("+x.set+")":""}, ${money(livePrice(x))}`);
+    trade[k].forEach((x,i)=>{const b=document.createElement("button");b.type="button";b.className="tile"+(i>=had&&had>=0&&!calm()&&tiles.dataset.ready?" pop":"");b.setAttribute("aria-label",`Remove ${x.n}${x.set?" ("+x.set+")":""}, ${money(livePrice(x))}`);
       b.innerHTML='<span class="tt"><span class="tn"></span><span class="ts"></span><span class="tp"></span></span>';b.prepend(thumbEl(x.ti,44));
       b.querySelector(".tn").textContent=x.n;b.querySelector(".ts").textContent=x.set||"";b.querySelector(".tp").textContent=money(livePrice(x));
       if(live&&k==="theirs"){b.classList.add("locked");b.setAttribute("aria-label",`${x.n}${x.set?" ("+x.set+")":""}, ${money(livePrice(x))}`);b.onclick=null}
@@ -1888,25 +1919,40 @@ function renderTrade(){
     $("sum-"+k).textContent=ps.length>1?(ps.length>10?ps.slice(0,10).join(" + ")+" + …":ps.join(" + "))+" = "+money(tot):(ps.length?(live&&k==="theirs"?"":"Tap a card to remove it"):"");
   }
   const a=sideTotal("mine"),b=sideTotal("theirs"),d=b-a;
-  $("vsMine").textContent=money(a);$("vsTheirs").textContent=money(b);
+  bumpIfChanged($("vsMine"),money(a));bumpIfChanged($("vsTheirs"),money(b));
   $("verdict").textContent=!trade.mine.length&&!trade.theirs.length?"Add cards to both sides to see who wins the trade."
     :Math.abs(d)<0.005?"Even trade!":d>0?`You get ${money(d)} more in value.`:`You give ${money(-d)} more in value.`;
-  const n=trade.mine.length+trade.theirs.length;$("tradeCount").textContent=n?`(${n})`:"";
+  const n=trade.mine.length+trade.theirs.length;bumpIfChanged($("tradeCount"),n?`(${n})`:"");placeTabInd();
   const st=$("savedTrade");if(st){st.hidden=!n||!!live;
     st.textContent=n?`Saved trade: you give ${trade.mine.length} card${trade.mine.length===1?"":"s"} (${money(a)}), you get ${trade.theirs.length} (${money(b)})`:"";
     $("tradeOpen").textContent=n&&!live?"Open saved trade":"Start a trade on one phone";$("oneTrade").hidden=!!live}
 }
+/* ---------- little animations (all skipped when the phone asks for less motion) ---------- */
+const calm=()=>{try{return matchMedia("(prefers-reduced-motion: reduce)").matches}catch(e){return false}};
+function replay(el,cls,ms=900){if(!el)return;clearTimeout(el["_t"+cls]);el.classList.remove(cls);void el.offsetWidth;el.classList.add(cls);el["_t"+cls]=setTimeout(()=>el.classList.remove(cls),ms)}
+function bumpIfChanged(el,text){if(!el)return;const was=el.textContent;el.textContent=text;if(was&&was!==text&&!calm())replay(el,"bump")}
+function placeTabInd(){
+  const nav=document.querySelector(".tabs"),ind=$("tabInd"),on=nav&&nav.querySelector('[aria-selected="true"]');if(!ind||!on)return;
+  ind.style.width=on.offsetWidth+"px";ind.style.transform=`translateX(${on.offsetLeft}px)`;nav.classList.add("ind-ready");
+}
 /* ---------- full-screen sheets (trade, collection) with a close button ---------- */
 function openSheet(id){
-  const el=$(id);if(!el.hidden)return;el.hidden=false;el.scrollTop=0;document.body.classList.add("sheet-open");
+  const el=$(id);
+  if(el.classList.contains("closing")){clearTimeout(el._closeT);el._closeT=null;el.classList.remove("closing"); // tapped again while sliding shut: slide back open
+    if(el._fromHist)try{history.pushState({rutSheet:id},"")}catch(e){}return}
+  if(!el.hidden)return;
+  el.hidden=false;el.scrollTop=0;document.body.classList.add("sheet-open");
   try{history.pushState({rutSheet:id},"")}catch(e){}
 }
 function closeSheet(id,fromHistory){
-  const el=$(id);if(el.hidden)return;el.hidden=true;
+  const el=$(id);if(el.hidden||el.classList.contains("closing"))return;
   if(id==="tradeSheet"){$("tradeDoneBox").hidden=true;$("tradeActions").hidden=false;closeAdder("mine");closeAdder("theirs")}
   if(id==="collSheet")closeAdder("coll");
-  if(!$("tradeSheet").hidden||!$("collSheet").hidden)return;document.body.classList.remove("sheet-open");
-  if(!fromHistory)try{if(history.state&&history.state.rutSheet===id)history.back()}catch(e){}
+  el._fromHist=!!fromHistory;
+  const finish=()=>{el._closeT=null;el.hidden=true;el.classList.remove("closing");
+    const open=x=>!$(x).hidden;if(!open("tradeSheet")&&!open("collSheet"))document.body.classList.remove("sheet-open");
+    if(!fromHistory)try{if(history.state&&history.state.rutSheet===id)history.back()}catch(e){}};
+  if(calm())finish();else{el.classList.add("closing");el._closeT=setTimeout(finish,190)}
 }
 function openTrade(){$("tradeDoneMsg").textContent="";openSheet("tradeSheet")}
 function finishTrade(updateColl){
@@ -1919,12 +1965,16 @@ function finishTrade(updateColl){
   if(live)stopLive(true);
   trade={mine:[],theirs:[]};saveTrade(false);renderLive();renderTrade();closeSheet("tradeSheet");$("tradeDoneMsg").textContent=msg;
 }
+const TAB_ORDER=["scan","trade","collection"];let tabNow="scan";
 function setTab(name){
+  const dir=TAB_ORDER.indexOf(name)-TAB_ORDER.indexOf(tabNow);tabNow=name;
   for(const [v,t,n] of [["scanView","tabScan","scan"],["tradeView","tabTrade","trade"],["collView","tabColl","collection"]]){
     $(v).hidden=name!==n;$(t).setAttribute("aria-selected",String(name===n))}
+  {const v=$({scan:"scanView",trade:"tradeView",collection:"collView"}[name]);v.classList.remove("in-r","in-l");if(dir&&!calm()){void v.offsetWidth;v.classList.add(dir>0?"in-r":"in-l")}}
+  placeTabInd();
   if(name!=="trade"&&qrStream)stopQrScan();
   if(name!=="collection"&&typeof cs!=="undefined"&&cs.state!=="off")csStop();
-  for(const id of ["tradeSheet","collSheet"])if(!$(id).hidden){$(id).hidden=true;document.body.classList.remove("sheet-open")}
+  for(const id of ["tradeSheet","collSheet"])if(!$(id).hidden){clearTimeout($(id)._closeT);$(id).hidden=true;$(id).classList.remove("closing");document.body.classList.remove("sheet-open")}
   try{if(!/^#(t|live)=/.test(location.hash))history.replaceState(null,"",name==="scan"?"#":"#"+name)}catch(e){}
   if(name==="collection")renderColl();
 }
@@ -2075,7 +2125,7 @@ function renderColl(){
     plus.onclick=()=>{x.qty++;saveColl();renderColl()};
     q.append(minus,num,plus);row.append(thumbEl(x.ti,40),info,q);list.appendChild(row)}
   const n=coll.reduce((a,x)=>a+x.qty,0),val=coll.reduce((a,x)=>a+(livePrice(x)||0)*x.qty,0);
-  $("collCards").textContent=n;$("collValue").textContent=money(val);$("collSheetSum").innerHTML=n?`${n} card${n===1?"":"s"} · worth <b>${money(val)}</b>`:"No cards yet. Add some below, or scan them in from the Collection tab.";$("collOpen").textContent=n?`View collection (${n})`:"View collection";renderTrend();$("collCount").textContent=n?`(${n})`:"";
+  bumpIfChanged($("collCards"),String(n));bumpIfChanged($("collValue"),money(val));$("collSheetSum").innerHTML=n?`${n} card${n===1?"":"s"} · worth <b>${money(val)}</b>`:"No cards yet. Add some below, or scan them in from the Collection tab.";$("collOpen").textContent=n?`View collection (${n})`:"View collection";renderTrend();bumpIfChanged($("collCount"),n?`(${n})`:"");placeTabInd();
   if(typeof showBackupInfo==="function")showBackupInfo();
 }
 function openCollPicker(k){
@@ -2598,7 +2648,7 @@ function showInstallTip(){
   document.querySelectorAll(".add-coll").forEach(b=>b.onclick=()=>openCollPicker(b.dataset.side));
   {let armed=false;$("clearColl").onclick=()=>{if(!coll.length)return;if(!armed){armed=true;$("clearColl").textContent="Tap again to delete all";setTimeout(()=>{armed=false;$("clearColl").textContent="Clear collection"},4000);return}
     coll=[];saveColl();renderColl();armed=false;$("clearColl").textContent="Clear collection"}}
-  $("addColl").onclick=()=>{if(!current||!current.match)return;const c=current.match,[set,h,price,,ti]=c.p[current.printing||0];addToColl({n:c.n,set:set||"",h,price,ti});
+  $("addColl").onclick=()=>{if(!current||!current.match)return;if(!calm())replay($("addColl"),"bump");const c=current.match,[set,h,price,,ti]=c.p[current.printing||0];addToColl({n:c.n,set:set||"",h,price,ti});
     setStatus(`Added ${c.n} to your collection.`)};
   for(const k of [...SIDES,"coll"]){
     $("q-"+k).addEventListener("input",()=>{if(!$("q-"+k).oninput)showResults(k)});
@@ -2619,7 +2669,9 @@ function showInstallTip(){
     $("tradeDoneBox").hidden=false;$("tradeActions").hidden=true;$("tradeDoneBox").scrollIntoView({block:"center"})};
   $("tradeDoneColl").onclick=()=>finishTrade(true);$("tradeDoneOnly").onclick=()=>finishTrade(false);
   $("tradeDoneBack").onclick=()=>{$("tradeDoneBox").hidden=true;$("tradeActions").hidden=false};
-  $("collOpen").onclick=()=>{renderColl();openSheet("collSheet")};$("collClose").onclick=()=>closeSheet("collSheet");
+  $("collOpen").onclick=()=>{renderColl();openSheet("collSheet");
+    if(!calm()){const l=$("collList");[...l.children].forEach((e,i)=>e.style.setProperty("--i",Math.min(i,14)));replay(l,"stagger",1000)}};
+  window.addEventListener("resize",placeTabInd);if(document.fonts&&document.fonts.ready)document.fonts.ready.then(placeTabInd);requestAnimationFrame(placeTabInd);$("collClose").onclick=()=>closeSheet("collSheet");
   window.addEventListener("popstate",()=>{for(const id of ["tradeSheet","collSheet"])closeSheet(id,true)});
   document.addEventListener("keydown",e=>{if(e.key!=="Escape"||!$("bulk").hidden)return;if(!$("collSheet").hidden)closeSheet("collSheet");else if(!$("tradeSheet").hidden)closeSheet("tradeSheet")});
   const addFromScan=k=>{if(!current||!current.match)return;setTab("trade");openTrade();showConfirm(k,current.match,[],"",current.printing||0);$("adder-"+k).scrollIntoView({block:"center"})};
