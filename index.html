@@ -306,9 +306,6 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .result-actions{display:flex;flex-direction:column;gap:10px}
 #resultPanel.empty .result-actions{display:none}
 .result-actions .links{margin-top:0}
-.trade-add{display:flex;gap:8px;flex-wrap:wrap}
-.trade-add button{flex:1 1 140px}
-.trade-add button{min-height:40px;padding:8px 12px;font-size:.9rem}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 
@@ -369,7 +366,6 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     </div>
     <div class="result-actions">
       <div class="links" id="links"></div>
-      <div class="trade-add" id="tradeAdd" hidden><button type="button" id="addMine">+ Your side of trade</button><button type="button" id="addTheirs">+ Their side</button><button type="button" id="addColl">+ My collection</button></div>
       <div class="alts" id="others"></div>
       <button type="button" id="askClaude" hidden style="min-height:40px;padding:8px 12px;font-size:.92rem;width:fit-content">Read name with Claude</button>
     </div>
@@ -603,7 +599,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     <div class="bulk-head"><h2 id="collSheetTitle">My collection</h2><button type="button" class="x-btn" id="collClose" aria-label="Close collection">✕</button></div>
     <p class="sheet-sum" id="collSheetSum"></p>
     <section class="panel side" aria-labelledby="h-coll">
-      <div class="side-head"><div><h2 id="h-coll">Cards</h2><p class="small" id="collSub">Add cards by name, photo, or right after a scan.</p></div></div>
+      <div class="side-head"><div><h2 id="h-coll">Cards</h2><p class="small" id="collSub">Add cards by name or photo, or use Scan cards in on the Collection tab.</p></div></div>
       <div class="row add-row">
         <button type="button" data-side="coll" class="add-search">Add by name</button>
         <label class="btn file-btn"><input type="file" accept="image/*" capture="environment" data-side="coll" class="add-photo">Add by photo</label>
@@ -1514,7 +1510,7 @@ function combinePic(ms,pm){ // mix the name matches with what the picture says
 }
 function showMatch(readings,rawShown,source,forced){
   if(!calm())replay($("resultPanel"),"reveal");
-  const nameEl=$("nameOut"),links=$("links"),others=$("others");links.innerHTML="";others.innerHTML="";$("priceLine").innerHTML="";$("cardMeta").innerHTML="";$("tradeAdd").hidden=true;if(current)current.match=null;
+  const nameEl=$("nameOut"),links=$("links"),others=$("others");links.innerHTML="";others.innerHTML="";$("priceLine").innerHTML="";$("cardMeta").innerHTML="";if(current)current.match=null;
   const res=current&&current.res;let ms=forced?[{c:forced.card,d:forced.sure?0:0.4,s:0}]:matchCard(readings,res&&res.type,res&&res.margin>0.45);
   if(!forced&&source!=="picked by you")ms=combinePic(ms,current&&current.pic);
   // brigade colour as a small tie-breaker between close names
@@ -1525,7 +1521,7 @@ function showMatch(readings,rawShown,source,forced){
   if(top&&(sure||maybe)){
     nameEl.className="name";nameEl.textContent=top.c.n;
     $("nameConf").textContent=sure?"":"Not 100% sure on this one, double check it.";
-    renderCard(top.c,forced&&forced.printing!=null?forced.printing:0,forced&&forced.printing!=null?"picture":"default");$("tradeAdd").hidden=false;
+    renderCard(top.c,forced&&forced.printing!=null?forced.printing:0,forced&&forced.printing!=null?"picture":"default");
     const myScan=scanId,card=current&&current.card;
     pickPrinting(top.c,card).then(r=>{if(scanId===myScan&&current&&current.match===top.c)renderCard(top.c,r.idx,r.how)});
     // type cross-check against the card list
@@ -1663,7 +1659,7 @@ async function scan(src,{from}={}){
   const bins=nameModes(cardHi).map(m=>nameBinary(cardHi,2,m));
   const showBin=b=>{const nv=$("nameView");nv.width=b.width;nv.height=b.height;nv.getContext("2d").drawImage(b,0,0)};
   showBin(bins[0]);
-  const nameEl=$("nameOut");nameEl.className="name pending";nameEl.textContent="Reading name…";$("nameConf").textContent="";$("links").innerHTML="";$("others").innerHTML="";$("priceLine").innerHTML="";$("tradeAdd").hidden=true;
+  const nameEl=$("nameOut");nameEl.className="name pending";nameEl.textContent="Reading name…";$("nameConf").textContent="";$("links").innerHTML="";$("others").innerHTML="";$("priceLine").innerHTML="";
   setStatus(found?"Card found. Reading the name…":"Couldn't see the card edges. Try a darker background behind the card. Reading anyway…");
   if(current.pic&&current.pic.ratio<PIC_FAST){ // the picture alone is a clear match: done, no need to read the name
     const pk=picPick(current.pic);showMatch([pk.c.n],"","matched by picture",{card:pk.c,sure:true,how:"picture",printing:pk.i});setStatus("");return}
@@ -2105,7 +2101,7 @@ function renderColl(){
   let items=coll.filter(x=>!f||normName(x.n).includes(f));
   const last=g=>/^(No |Other)/.test(g)?1:0; // "No brigade", "No set" go last
   items.sort(groupOf?(a,b)=>{const ga=groupOf(a),gb=groupOf(b);return last(ga)-last(gb)||ga.localeCompare(gb)||byName(a,b)}:sorters[mode]||byName);
-  if(!coll.length){const e=document.createElement("div");e.className="coll-empty";e.textContent="Nothing here yet. Scan a card and hit + My collection.";list.appendChild(e)}
+  if(!coll.length){const e=document.createElement("div");e.className="coll-empty";e.textContent="Nothing here yet. Add cards by name or photo above, or scan them in from the Collection tab.";list.appendChild(e)}
   let lastG=null;
   for(const x of items){
     if(groupOf){const g=groupOf(x);if(g!==lastG){lastG=g;const its=items.filter(y=>groupOf(y)===g),h=document.createElement("div");h.className="coll-group";
@@ -2324,7 +2320,6 @@ function renderLive(){
   const on=!!live;$("liveOff").hidden=on;$("liveOn").hidden=!on;
   $("theirsAdd").hidden=on;$("adder-theirs").hidden=on||$("adder-theirs").hidden;
   $("theirsSub").textContent=on?"Added on their phone":"What you get";
-  $("addTheirs").hidden=on;
   $("shareTrade").hidden=on;
   $("sheetLive").hidden=!on;$("tradeSheetTitle").textContent=on?"Live trade":"Trade";
   $("tradeSheetNote").textContent=on?"Closing keeps you in the live trade. Leave it from the Trade tab, or hit Cancel trade.":"Closing keeps this trade saved. Come back to finish or cancel it.";
@@ -2648,8 +2643,6 @@ function showInstallTip(){
   document.querySelectorAll(".add-coll").forEach(b=>b.onclick=()=>openCollPicker(b.dataset.side));
   {let armed=false;$("clearColl").onclick=()=>{if(!coll.length)return;if(!armed){armed=true;$("clearColl").textContent="Tap again to delete all";setTimeout(()=>{armed=false;$("clearColl").textContent="Clear collection"},4000);return}
     coll=[];saveColl();renderColl();armed=false;$("clearColl").textContent="Clear collection"}}
-  $("addColl").onclick=()=>{if(!current||!current.match)return;if(!calm())replay($("addColl"),"bump");const c=current.match,[set,h,price,,ti]=c.p[current.printing||0];addToColl({n:c.n,set:set||"",h,price,ti});
-    setStatus(`Added ${c.n} to your collection.`)};
   for(const k of [...SIDES,"coll"]){
     $("q-"+k).addEventListener("input",()=>{if(!$("q-"+k).oninput)showResults(k)});
     $("q-"+k).addEventListener("keydown",e=>{if(e.key==="Escape")closeAdder(k)});
@@ -2674,8 +2667,6 @@ function showInstallTip(){
   window.addEventListener("resize",placeTabInd);if(document.fonts&&document.fonts.ready)document.fonts.ready.then(placeTabInd);requestAnimationFrame(placeTabInd);$("collClose").onclick=()=>closeSheet("collSheet");
   window.addEventListener("popstate",()=>{for(const id of ["tradeSheet","collSheet"])closeSheet(id,true)});
   document.addEventListener("keydown",e=>{if(e.key!=="Escape"||!$("bulk").hidden)return;if(!$("collSheet").hidden)closeSheet("collSheet");else if(!$("tradeSheet").hidden)closeSheet("tradeSheet")});
-  const addFromScan=k=>{if(!current||!current.match)return;setTab("trade");openTrade();showConfirm(k,current.match,[],"",current.printing||0);$("adder-"+k).scrollIntoView({block:"center"})};
-  $("addMine").onclick=()=>addFromScan("mine");$("addTheirs").onclick=()=>addFromScan("theirs");
   $("livePanel").hidden=!document.querySelector('link[rel="manifest"]'); // live trade needs the installed/GitHub app
   showInstallTip();showGate();
   $("gateSkip").onclick=()=>hideGate(!/^#(t|live)=/.test(location.hash));
