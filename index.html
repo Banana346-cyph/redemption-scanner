@@ -826,6 +826,33 @@ function lineX(a,b){const d=a.dx*b.dy-a.dy*b.dx;if(Math.abs(d)<1e-6)return null;
 function quadFromLines(Ls){const q=[];for(let i=0;i<4;i++){const p=lineX(Ls[(i+3)%4],Ls[i]);if(!p)return null;q.push(p)}return q}
 function quadAspect(q){const len=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);return (len(q[0],q[1])+len(q[2],q[3]))/(len(q[1],q[2])+len(q[3],q[0]))}
 function isConvex(q){let s=0;for(let i=0;i<4;i++){const a=q[i],b=q[(i+1)%4],c=q[(i+2)%4];const z=(b[0]-a[0])*(c[1]-b[1])-(b[1]-a[1])*(c[0]-b[0]);if(z===0)return false;if(!s)s=Math.sign(z);else if(Math.sign(z)!==s)return false}return true}
+function foilBand(d,SW,SH,q){ // which sides of this outline have a bright band just inside whose colour keeps changing (= a foil card's rainbow border)? -> [top,right,bottom,left] or null
+  const at=(u,v)=>[q[0][0]*(1-u)*(1-v)+q[1][0]*u*(1-v)+q[2][0]*u*v+q[3][0]*(1-u)*v,q[0][1]*(1-u)*(1-v)+q[1][1]*u*(1-v)+q[2][1]*u*v+q[3][1]*(1-u)*v];
+  const sides=[],outs=[],deep=[];
+  for(const out of [0,1,2])for(let side=0;side<4;side++){let n=0,sl=0,ss=0,sq=0,SA=0,SB=0,SA2=0,SB2=0,R=0,G=0,Bl=0;
+    for(let k=1;k<30;k++){const a=k/30;for(const dep0 of (out===2?[0.065,0.08,0.095]:[0.012,0.022,0.032])){const dep=out===1?-dep0:dep0;
+      const [x,y]=side===0?at(a,dep*0.716):side===2?at(a,1-dep*0.716):side===1?at(1-dep,a):at(dep,a);
+      const xi=Math.round(x),yi=Math.round(y);if(xi<0||yi<0||xi>=SW||yi>=SH)continue;const i=(yi*SW+xi)*4,r=d[i],g=d[i+1],b=d[i+2];
+      const hi=Math.max(r,g,b),lo=Math.min(r,g,b);n++;sl+=hi;sq+=hi*hi;ss+=hi-lo;const A=r-g,B=(r+g)/2-b;SA+=A;SB+=B;SA2+=A*A;SB2+=B*B;R+=r;G+=g;Bl+=b}}
+    const L=out===2?deep:out?outs:sides;if(n<20){L.push(null);continue}const m=sl/n;
+    L.push({m,cv:Math.sqrt(Math.max(0,sq/n-m*m))/m,sat:ss/n,A:SA/n,B:SB/n,vA:SA2/n-(SA/n)**2,vB:SB2/n-(SB/n)**2,n,rgb:[R/n,G/n,Bl/n]})}
+  const step=k=>sides[k]&&deep[k]?Math.hypot(...sides[k].rgb.map((v,j)=>v-deep[k].rgb[j])):0; // colour change from the band to the picture further in
+  const looks=x=>!!x&&x.m>=120&&x.cv<0.25&&x.sat>=22;
+  const band=sides.map((x,k)=>looks(x)&&!looks(outs[k])); // border-like inside, but not outside too (outside the real picture frame is the border itself)
+  const bs=sides.filter((x,k)=>band[k]);if(!bs.length)return null;
+  // colour wander over all the band-like sides together (within-side spread plus differences between sides)
+  const N=bs.reduce((a,x)=>a+x.n,0),mA=bs.reduce((a,x)=>a+x.A*x.n,0)/N,mB=bs.reduce((a,x)=>a+x.B*x.n,0)/N;
+  const vv=bs.reduce((a,x)=>a+x.n*(x.vA+x.vB+(x.A-mA)**2+(x.B-mB)**2),0)/N,sat=bs.reduce((a,x)=>a+x.sat*x.n,0)/N,spread=Math.sqrt(Math.max(0,vv));
+  const fk=[0,1,2,3].filter(k=>band[k]),stepAvg=fk.reduce((a,k)=>a+step(k),0)/fk.length;
+  const ok=spread>=(window.__fbK??0.7)*sat&&stepAvg>=35; // ...and the picture really starts right after the band
+  if(window.__dbgMasks)window.__fbs={sides:sides.map(x=>x&&[+x.m.toFixed(0),+x.cv.toFixed(2),+x.sat.toFixed(0)]),band,spread:+spread.toFixed(1),sat:+sat.toFixed(1),ok,steps:[0,1,2,3].map(k=>+step(k).toFixed(0)),nb:band.filter(Boolean).length};
+  return ok?band:null;
+}
+function insetSides(q,band){ // move the given sides in by the border width
+  const Hm=homography([[0,0],[1,0],[1,1],[0,1]],q),[bx,by]=OUT_INSET,u0=band[3]?bx:0,u1=band[1]?1-bx:1,v0=band[0]?by:0,v1=band[2]?1-by:1;
+  return [[u0,v0],[u1,v0],[u1,v1],[u0,v1]].map(([u,v])=>{const z=Hm[6]*u+Hm[7]*v+1;return [(Hm[0]*u+Hm[1]*v+Hm[2])/z,(Hm[3]*u+Hm[4]*v+Hm[5])/z]});
+}
+function brightImg(d,N){const w=new Float32Array(N);for(let i=0;i<N;i++){const r=d[i*4],g=d[i*4+1],b=d[i*4+2],lo=Math.min(r,g,b),hi=Math.max(r,g,b);w[i]=(hi+lo)/2-0.15*(hi-lo)}return w} // foil borders: bright but rainbow-coloured
 function whiteImg(d,N){const w=new Float32Array(N);for(let i=0;i<N;i++){const r=d[i*4],g=d[i*4+1],b=d[i*4+2],lo=Math.min(r,g,b),hi=Math.max(r,g,b);w[i]=lo-0.6*(hi-lo)}return w}
 function sampleW(w,SW,SH,x,y){x=Math.round(x);y=Math.round(y);if(x<0||y<0||x>=SW||y>=SH)return null;return w[y*SW+x]}
 function snapEdges(w,SW,SH,q){ // move each edge onto the strongest inside->outside "gets whiter" step nearby
@@ -1000,7 +1027,7 @@ function detectCard(src,opts){ // src canvas -> 4 corners [tl,tr,br,bl] in src c
   const d=g.getImageData(0,0,SW,SH).data, N=SW*SH;
   const mn=new Uint8Array(N), sp=new Uint8Array(N), mx=new Float32Array(N);
   for(let i=0;i<N;i++){const r=d[i*4],gg=d[i*4+1],b=d[i*4+2];const lo=Math.min(r,gg,b),hi=Math.max(r,gg,b);mn[i]=lo;sp[i]=hi-lo;mx[i]=hi}
-  const W=whiteImg(d,N),memo={};
+  const W0=whiteImg(d,N),memo={};let W=W0,Wf=null;
   const once=(k,f)=>memo[k]||(memo[k]=f());
   const mk=f=>{const m=new Uint8Array(N);for(let i=0;i<N;i++)m[i]=f(i)?0:1;return m}; // 0 = white
   const closeL=()=>once("close",()=>minFilter(maxFilter(mx,SW,SH,16),SW,SH,16));
@@ -1018,6 +1045,10 @@ function detectCard(src,opts){ // src canvas -> 4 corners [tl,tr,br,bl] in src c
     ()=>{const lm=l30();return mk(i=>mx[i]>30&&mx[i]>=0.7*lm[i]&&sp[i]<0.25*mx[i]+6)},
     ()=>{const lm=boxBlur(maxFilter(mx,SW,SH,12),SW,SH,5);return mk(i=>mx[i]>30&&mx[i]>=0.82*lm[i]&&sp[i]<0.25*mx[i]+6)},
     ()=>{const l6=boxBlur(maxFilter(mx,SW,SH,6),SW,SH,2),L=l30();return mk(i=>mx[i]>30&&mx[i]>=0.86*l6[i]&&mx[i]>=0.4*L[i]&&sp[i]<0.22*mx[i]+6)},
+    // foil: the border is bright but rainbow-coloured, so allow colour (8-10, only tried when nothing else worked)
+    ()=>{const L=closeL();return mk(i=>mx[i]>60&&mx[i]>=0.8*L[i]&&mn[i]>=0.38*mx[i])},
+    ()=>{const thr=Math.max(90,Math.min(215,percentile(mx,0.98)*0.78));return mk(i=>mx[i]>thr&&mn[i]>=0.4*mx[i])},
+    ()=>{const lm=l30();return mk(i=>mx[i]>60&&mx[i]>=0.75*lm[i]&&mn[i]>=0.38*mx[i])},
   ];
   const STAGES=window.__MS?[[window.__MS,window.__ER||[0,2]]]:multi?[[[0,2,1],[0]]]:[[[0,2],[0]],[[0,1,2,3],[0,2]],[[4,5,6,7],[0,2]]];
   let best=null;const seen=[],seen0=[],built={},strong=[],all=[];let nc=0;
@@ -1038,6 +1069,11 @@ function detectCard(src,opts){ // src canvas -> 4 corners [tl,tr,br,bl] in src c
     for(const mi of [-1,...ms]){const m=mi<0?null:(built[mi]||(built[mi]=MASKS[mi]()));
       for(const r of (mi<0?[0]:er)){for(const q0 of (mi<0?hint.splice(0):quadsFromMask(r?erode(m,SW,SH,r):m,SW,SH)))tryQ(q0,mi,r)}}
     if(!multi&&best&&best.v>=0.85)break; // good enough: skip the slower fallbacks
+  }
+  if(!multi&&!window.__noFoil&&!(best&&best.v>=(window.__foilGate??0.5))){ // maybe a foil card: its border isn't plain white
+    Wf=brightImg(d,N);W=Wf;const before=best;
+    for(const mi of [8,9,10]){const m=built[mi]||(built[mi]=MASKS[mi]());for(const r of [0,2])for(const q0 of quadsFromMask(r?erode(m,SW,SH,r):m,SW,SH))tryQ(q0,"foil"+mi,r);if(best&&best!==before&&best.v>=0.85)break}
+    if(best&&best!==before&&best.v>=0.8)best.foil=true;else{best=before;W=W0}
   }
   if(multi)return pickCards(all).map(c=>c.q.map(([x,y])=>[x/s,y/s]));
   // straight edges found directly in the photo: catches cards whose blob got cut up (glare streaks on sleeves, reflections)
@@ -1070,6 +1106,7 @@ function detectCard(src,opts){ // src canvas -> 4 corners [tl,tr,br,bl] in src c
       if(bigger.length){pick=bigger[0].inner;how="edge"}
     }
   }
+  {const fb=pick&&!window.__noFoil?foilBand(d,SW,SH,pick):null;if(fb){pick=insetSides(pick,fb);how+="+foil-outline"}} // we found a foil card's outside edge: step in to the picture frame
   window.__lastDetect={n:nc,best:best&&best.v,how};
   return pick?pick.map(([x,y])=>[x/s,y/s]):null;
 }
@@ -1171,7 +1208,8 @@ function otsu(vals,lo,hi){
   return lo+(bi+1)*(hi-lo)/B;
 }
 const NAME_MODES=["A","B","C","D"];
-function nameModes(cardHi){ // a light (silver/white) name banner needs a higher cut so the letters separate from it
+function nameModes(cardHi,foil){ // a light (silver/white) name banner needs a higher cut so the letters separate from it; foil gets its own cut
+  if(foil)return [...NAME_MODES,"F","G"];
   const k=2,c=document.createElement("canvas"),w=NAME.w,h=NAME.h;c.width=w;c.height=h;const g=ctx2d(c);
   g.drawImage(cardHi,NAME.x*k,NAME.y*k,NAME.w*k,NAME.h*k,0,0,w,h);const d=g.getImageData(0,0,w,h).data,v=[];
   for(let i=0;i<w*h;i+=3){const r=d[i*4],gg=d[i*4+1],b=d[i*4+2],mn=Math.min(r,gg,b),mx=Math.max(r,gg,b);v.push(mn-0.6*(mx-mn))}
@@ -1183,13 +1221,16 @@ function nameBinary(cardHi,k,mode="A"){ // cardHi is k*500 x k*700
   const c=document.createElement("canvas");c.width=w;c.height=h;const g=ctx2d(c);g.imageSmoothingQuality="high";
   g.drawImage(cardHi,NAME.x*k,NAME.y*k,NAME.w*k,NAME.h*k,0,0,w,h);
   const d=g.getImageData(0,0,w,h).data,N=w*h,score=new Float32Array(N);
-  for(let i=0;i<N;i++){const r=d[i*4],gg=d[i*4+1],b=d[i*4+2];const mn=Math.min(r,gg,b),mx=Math.max(r,gg,b);score[i]=mn-0.6*(mx-mn)}
+  const lit=mode==="F"||mode==="G"; // foil: the rainbow tints the white letters too, so go by lightness instead of whiteness
+  for(let i=0;i<N;i++){const r=d[i*4],gg=d[i*4+1],b=d[i*4+2];const mn=Math.min(r,gg,b),mx=Math.max(r,gg,b);score[i]=lit?(mx+mn)/2:mn-0.6*(mx-mn)}
   // "whiteness" threshold: four variants, the reader keeps whichever it is most sure about
   const smp=score.filter((_,i)=>i%5===0);let thr;
   if(mode==="A")thr=Math.max(140,percentile(smp,0.97)*0.75);
   else if(mode==="B")thr=Math.max(100,otsu(smp,-160,256));
   else if(mode==="C")thr=Math.max(100,percentile(smp,0.995)*0.62);
   else if(mode==="E")thr=percentile(smp,0.995)*0.8;
+  else if(mode==="F")thr=percentile(smp,0.995)*0.82;
+  else if(mode==="G")thr=Math.max(percentile(smp,0.995)*0.68,otsu(smp,0,256));
   else thr=Math.max(100,percentile(smp,0.995)*0.75);
   const m=new Uint8Array(N);for(let i=0;i<N;i++)m[i]=score[i]>thr?1:0;
   if(mode==="E"){ // white letters with a dark outline on a light background: the outline (thickened a bit) separates them
@@ -1860,7 +1901,7 @@ function picFeat(card){ // -> {v: Float32Array(PD), w: Uint8Array(cells) 1 = usa
 }
 function picDist(P,o,f,cells,tmp){ // per-cell difference, skipping glare cells and the worst 15% (reflections, fingers)
   const n=PGW*PGH;let m=0;
-  for(let k=0;k<n;k++){if(!f.w[k])continue;const a=P[o+k]-f.v[k],b=P[o+n+k]-f.v[n+k],c=P[o+2*n+k]-f.v[2*n+k];tmp[m++]=a*a+b*b+c*c}
+  const cw=f.cw??1;for(let k=0;k<n;k++){if(!f.w[k])continue;const a=P[o+k]-f.v[k],b=P[o+n+k]-f.v[n+k],c=P[o+2*n+k]-f.v[2*n+k];tmp[m++]=a*a+cw*(b*b+c*c)}
   const keep=Math.max(1,Math.floor(m*0.85)),arr=tmp.subarray(0,m);arr.sort();let s=0;for(let i=0;i<keep;i++)s+=arr[i];return s/(keep*3);
 }
 function baseName(n){return n.replace(/\s*\*.*$/,"").replace(/\s*\((?:[^()]*)\)\s*$/,"").trim().toLowerCase()}
@@ -1868,11 +1909,22 @@ function picOwners(){ // picture slot -> [card, printing index]
   if(PIC_OWNER)return PIC_OWNER;PIC_OWNER=new Map();
   for(const c of CARDS||[])c.p.forEach((p,i)=>{if(p[4]!=null&&!PIC_OWNER.has(p[4]))PIC_OWNER.set(p[4],[c,i])});return PIC_OWNER;
 }
+function foilScore(outer){ // the card's border ring: foil = bright and its colour keeps changing around the card -> spread/saturation (about 0.1 for a white border, 0.7+ for foil)
+  if(!outer)return 0;const W=outer.width,H=outer.height,d=ctx2d(outer).getImageData(0,0,W,H).data;let n=0,SA=0,SB=0,SA2=0,SB2=0,ss=0,sl=0;
+  let sl2=0;const add=(x,y)=>{const i=(Math.round(y)*W+Math.round(x))*4,r=d[i],g=d[i+1],b=d[i+2],hi=Math.max(r,g,b),lo=Math.min(r,g,b),A=r-g,B=(r+g)/2-b;n++;SA+=A;SB+=B;SA2+=A*A;SB2+=B*B;ss+=hi-lo;sl+=hi;sl2+=hi*hi};
+  for(let k=1;k<40;k++){const t=k/40;for(const e of [0.012,0.022,0.032]){add(t*(W-1),e*H*0.716);add(t*(W-1),(1-e*0.716)*(H-1));add(e*(W-1),t*(H-1));add((1-e)*(W-1),t*(H-1))}}
+  const spread=Math.sqrt(Math.max(0,SA2/n-(SA/n)**2+SB2/n-(SB/n)**2)),sat=ss/n,lum=sl/n;
+  const cv=Math.sqrt(Math.max(0,sl2/n-lum*lum))/lum;
+  return {f:sat>=20&&lum>=110?spread/sat:0,sat,lum,spread,cv};
+}
 function picMatch(card,outer){ // -> {top:[{c,i,d}] best per card name, ratio: best/second (small = sure)}
   if(!PICS||!CARDS||!card)return null;
   const q=picFeat(card),q2=outer?picFeat(outer):null,own=picOwners(),n=PICS.length/PD,best=new Map(),tmp=new Float32Array(PGW*PGH);
   // quick pass over every picture (glare cells skipped), then the careful trimmed comparison on the closest 80
-  const quick=(f,o)=>{let s=0;const m=PGW*PGH;for(let k=0;k<m;k++){if(!f.w[k])continue;const a=PICS[o+k]-f.v[k],b=PICS[o+m+k]-f.v[m+k],c=PICS[o+2*m+k]-f.v[2*m+k];s+=a*a+b*b+c*c}return s};
+  // foil: the rainbow sheen scrambles colours, so lean on light/dark shapes instead (less so when we're not sure it's foil)
+  const fs=foilScore(outer),foil=fs.f>=0.6&&!window.__noFoil;if(foil){q.cw=fs.cv<0.2?0.25:0.5;if(q2)q2.cw=q.cw}
+  if(window.__cw!=null){q.cw=window.__cw;if(q2)q2.cw=window.__cw}
+  const quick=(f,o)=>{let s=0;const m=PGW*PGH,cw=f.cw??1;for(let k=0;k<m;k++){if(!f.w[k])continue;const a=PICS[o+k]-f.v[k],b=PICS[o+m+k]-f.v[m+k],c=PICS[o+2*m+k]-f.v[2*m+k];s+=a*a+cw*(b*b+c*c)}return s};
   const pre=[];
   for(let t=0;t<n;t++){const o=t*PD;if(PICS[o]===-128||!own.has(t))continue;let s=quick(q,o);if(q2){const s2=quick(q2,o);if(s2<s)s=s2}pre.push([s,t])}
   pre.sort((a,b)=>a[0]-b[0]);
@@ -1882,7 +1934,7 @@ function picMatch(card,outer){ // -> {top:[{c,i,d}] best per card name, ratio: b
     const b=best.get(ow[0]);if(!b||s<b.d)best.set(ow[0],{c:ow[0],i:ow[1],d:s})}
   const top=[...best.values()].sort((a,b)=>a.d-b.d).slice(0,8);if(top.length<2)return null;
   const b0=baseName(top[0].c.n),other=top.find(t=>baseName(t.c.n)!==b0)||top[top.length-1]; // reprints/promos of the same card share a picture
-  return {top,ratio:top[0].d/Math.max(1e-6,other.d),same:top.filter(t=>t!==top[0]&&baseName(t.c.n)===b0).map(t=>t.c)};
+  return {top,ratio:top[0].d/Math.max(1e-6,other.d),same:top.filter(t=>t!==top[0]&&baseName(t.c.n)===b0).map(t=>t.c),foil,fs};
 }
 function picPick(pm){ // the listing whose picture matched best (the plain listing if it matched just as well) and its printing
   const t0=pm.top[0],b=baseName(t0.c.n),plain=pm.top.find(t=>t.c.n.toLowerCase()===b&&t.d<=t0.d*1.03)||t0;
@@ -2048,7 +2100,7 @@ async function identifyPrep(prepI,say,pmKnown){ // a straightened card -> best m
   if(pm&&pm.ratio<PIC_FAST){const pk=picPick(pm);return {matches:[{c:pk.c,d:0,s:0}],raw:pk.c.n,card,printing:pk.i}}
   say("Reading the name…");const w=await getWorker();
   if(!w)return {matches:combinePic([],pm),raw:"",error:pm?"":ocrError,card};
-  const cands=[];for(const m of nameModes(cardHi)){const r=await withTimeout(w.recognize(nameBinary(cardHi,2,m)),20000,"Reading the name");cands.push({name:cleanName(r.data.text),conf:r.data.confidence})}
+  const cands=[];for(const m of nameModes(cardHi,pm&&pm.foil)){const r=await withTimeout(w.recognize(nameBinary(cardHi,2,m)),20000,"Reading the name");cands.push({name:cleanName(r.data.text),conf:r.data.confidence})}
   const best=pickName(cands),readings=[best.fixedName,...cands.map(c=>c.name)];
   const ls=await maybeLostSoul(cardHi,card,readings,res.type,w,say);
   if(ls)return {matches:[{c:ls.card,d:ls.sure?0:0.4,s:0}],raw:best.fixedName,card};
