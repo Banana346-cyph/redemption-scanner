@@ -67,6 +67,7 @@ select,input{color-scheme:dark}
 .file-btn input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
 .scan-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .scan-actions .big{grid-column:1/-1;min-height:60px;font-size:1.1rem}
+.scan-actions .wide{grid-column:1/-1}
 .status{font-size:.9rem;color:var(--muted);min-height:1.4em;margin:0}
 .status.err{color:var(--evil)}
 /* result */
@@ -139,6 +140,8 @@ body.gated{overflow:hidden}
 .seg button[aria-pressed="true"]{background:var(--surface-2);color:var(--ink)}
 .chg{font:600 .76rem var(--mono);margin-left:6px}
 .bulk-btn{width:100%}
+.bulk-total{margin:0;font:700 1.05rem var(--body);text-align:center}.bulk-total b{color:var(--gold)}
+.bulk-links{margin-top:2px}.bulk-links a{padding:5px 9px;min-height:32px;font-size:.78rem}
 .sheet{z-index:40}
 .x-btn{width:44px;height:44px;min-height:44px;padding:0;border-radius:22px;font:700 1.15rem var(--body);display:inline-flex;align-items:center;justify-content:center;flex:none}
 .sheet-note{margin:-6px 0 0}
@@ -338,6 +341,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
       <button id="stopCam" type="button" hidden>Stop camera</button>
       <label class="btn file-btn"><input id="pick" type="file" accept="image/*">Upload</label>
       <button id="startCam" type="button">Live camera</button>
+      <label class="btn file-btn wide" id="bulkScanLbl"><input type="file" accept="image/*" id="bulkScanFile">Scan many cards from one photo</label>
     </div>
     <p class="status" id="status" role="status"></p>
   </section>
@@ -649,7 +653,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
       <button type="button" id="bulkMissBtn">Add a card it missed</button>
       <div id="bulkMissBox" hidden><label class="label" for="bulkQ">Card name</label><input id="bulkQ" type="search" class="q" autocomplete="off" placeholder="Start typing a card name"><div class="results" id="bulkRes"></div></div>
     </div>
-    <div class="bulk-foot"><button type="button" class="primary" id="bulkAdd">Add cards</button></div>
+    <div class="bulk-foot"><p class="bulk-total" id="bulkTotal" hidden></p><button type="button" class="primary" id="bulkAdd">Add cards</button></div>
   </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
@@ -1483,15 +1487,22 @@ function bestPrice(x,ytg,tlp){ // cheapest of the two stores for one printing, p
   const t=TL&&x?TL[x[1]]:null,opts=[],yp=ytg!==undefined?ytg:x&&x[2],tp=tlp!==undefined?tlp:t&&t[1];
   if(x&&yp!=null)opts.push([yp,x[3]!==0]);if(t&&tp!=null)opts.push([tp,!!t[2]]);
   if(!opts.length)return [null,true];const inS=opts.filter(o=>o[1]),pool=inS.length?inS:opts;return [Math.min(...pool.map(o=>o[0])),inS.length>0]}
+function stockNote(x,short){ // which store is out of stock for this printing ("" when it's in stock everywhere it's listed)
+  const t=TL&&x?TL[x[1]]:null,yOut=!!x&&x[2]!=null&&x[3]===0,tOut=!!t&&t[1]!=null&&!t[2];
+  const Y=short?"YTG":"Your Turn Games",T=short?"Three Lions":"Three Lions Gaming";
+  return yOut&&tOut?"out of stock at both stores":yOut?"out of stock at "+Y:tOut?"out of stock at "+T:"";
+}
+function printLabel(x){const n=stockNote(x,true);return `${x[0]||"Standard"} · ${money(bestPrice(x)[0])}${n?" · "+n:""}`}
 function renderCard(c,chosen,how){
   const links=$("links");links.innerHTML="";
   const order=[chosen,...c.p.map((_,i)=>i).filter(i=>i!==chosen)];
   order.forEach((i,n)=>{const [set,h,price]=c.p[i];const a=document.createElement("a");a.href=`${YTG}/products/${encodeURIComponent(h)}`;a.target="_blank";a.rel="noopener";
-    a.className=n===0?"primary":"";a.textContent=(n===0?"View on Your Turn Games":"")+(set?(n===0?" · ":"")+set:"")+(price!=null?" · "+money(price):"");links.appendChild(a);
+    a.className=n===0?"primary":"";a.textContent=(n===0?"View on Your Turn Games":"")+(set?(n===0?" · ":"")+set:"")+(price!=null?" · "+money(price):"")+(c.p[i][3]===0?" (out of stock)":"");links.appendChild(a);
     if(n===0){const t=tlLink(c.n,h);t.className="tl";links.appendChild(t)}});
   const [set]=c.p[chosen],[price,inStock]=bestPrice(c.p[chosen]);
   const others=c.p.filter((_,i)=>i!==chosen).map(x=>bestPrice(x)[0]).filter(v=>v!=null);
-  $("priceLine").innerHTML=(price!=null?money(price):"No price")+(!inStock?' <span class="oos">· out of stock</span>':"")
+  const sn=stockNote(c.p[chosen]);
+  $("priceLine").innerHTML=(price!=null?money(price):"No price")+(sn?` <span class="oos">· ${sn}</span>`:"")
     +(others.length?` <span class="oos" style="color:var(--muted)">· other printings ${money(Math.min(...others))}${Math.max(...others)!==Math.min(...others)?"–"+money(Math.max(...others)):""}</span>`:"");
   const meta=[];if(c.b&&c.b.length)meta.push(["Brigade",c.b.join(" / ")]);if(set)meta.push(["Set",set+(c.p.length>1?(how==="picture"?" (matched by picture)":" (best guess, check the card)"):"")]);
   $("cardMeta").innerHTML="";for(const [k,v] of meta){const dt=document.createElement("dt"),dd=document.createElement("dd");dt.textContent=k;dd.textContent=v;$("cardMeta").append(dt,dd)}
@@ -1723,7 +1734,7 @@ function camHint(t){$("camHint").textContent=t}
 function camButtons(){
   const on=camState!=="off";
   $("viewer").hidden=!on;$("startCam").hidden=on;$("stopCam").hidden=!on;$("snap").hidden=!on||camState==="reading";
-  $("cancelScan").hidden=camState!=="reading";
+  $("cancelScan").hidden=camState!=="reading";$("bulkScanLbl").hidden=on;
   $("takeLbl").classList.toggle("primary",!on);$("takeLbl").classList.toggle("big",!on);
 }
 async function getStream(){
@@ -1890,9 +1901,9 @@ function thumbEl(ti,w){
 /* ---------- prices & trading ---------- */
 const money=v=>v==null?"No price":"$"+Number(v).toFixed(2);
 function priceSummary(c){
-  const ps=c.p.filter(x=>x[2]!=null);if(!ps.length)return "";
-  const lo=Math.min(...ps.map(x=>x[2])),hi=Math.max(...ps.map(x=>x[2]));
-  const stock=c.p.every(x=>x[3]===0)?' <span class="oos">· out of stock at YTG</span>':"";
+  const ps=c.p.map(x=>bestPrice(x)[0]).filter(v=>v!=null);if(!ps.length)return "";
+  const lo=Math.min(...ps),hi=Math.max(...ps),notes=c.p.map(x=>stockNote(x));
+  const stock=notes.every(n=>n&&n===notes[0])?` <span class="oos">· ${notes[0]}</span>`:"";
   return (lo===hi?money(lo):`${money(lo)} – ${money(hi)} <span class="oos" style="color:var(--muted)">depending on printing</span>`)+stock;
 }
 const TRADE_KEY="rcs.trade.v1",SIDES=["mine","theirs"];
@@ -2013,7 +2024,7 @@ function showConfirm(k,c,alts,note,chosen,auto){
   $("adder-"+k).hidden=false;$("searchWrap-"+k).hidden=true;$("results-"+k).innerHTML="";
   $("confirm-"+k).hidden=false;$("confirmName-"+k).textContent=c.n;$("adderStatus-"+k).textContent=note||"";
   const sel=$("print-"+k);sel.innerHTML="";
-  c.p.forEach(([set,h,price,av],i)=>{const o=document.createElement("option");o.value=i;o.textContent=`${set||"Standard"} · ${money(price)}${av===0?" · out of stock":""}`;sel.appendChild(o)});
+  c.p.forEach((x,i)=>{const o=document.createElement("option");o.value=i;o.textContent=printLabel(x);sel.appendChild(o)});
   if(chosen)sel.value=String(chosen);
   const pv=$("preview-"+k);const showPv=()=>{pv.innerHTML="";const pr=c.p[+sel.value]||c.p[0];pv.appendChild(thumbEl(pr&&pr[4],108))};
   sel.onchange=showPv;showPv();autoPrinting(sel,c,!!auto);
@@ -2394,10 +2405,10 @@ async function csIdentify(q){
 }
 function csShow(c,alts,idx,sure){
   cs.state="result";cs.c=c;cs.alts=alts;$("csResult").hidden=false;$("csName").textContent=c.n;
-  const sel=$("csPrint");sel.innerHTML="";c.p.forEach(([set,h,price,av],i)=>{const o=document.createElement("option");o.value=i;o.textContent=`${set||"Standard"} · ${money(price)}${av===0?" · out of stock":""}`;sel.appendChild(o)});
+  const sel=$("csPrint");sel.innerHTML="";c.p.forEach((x,i)=>{const o=document.createElement("option");o.value=i;o.textContent=printLabel(x);sel.appendChild(o)});
   sel.value=String(idx||0);
-  const upd=()=>{const pr=c.p[+sel.value]||c.p[0];$("csThumb").innerHTML="";$("csThumb").appendChild(thumbEl(pr&&pr[4],90));const bp=bestPrice(pr);$("csPrice").textContent=bp[0]!=null?money(bp[0])+(bp[1]?"":" · out of stock"):"No price";
-    const L=$("csLinks");L.innerHTML="";if(pr){const a=document.createElement("a");a.href=`${YTG}/products/${encodeURIComponent(pr[1])}`;a.target="_blank";a.rel="noopener";a.textContent="Your Turn Games"+(pr[2]!=null?" · "+money(pr[2]):"");L.append(a,tlLink(c.n,pr[1],"Three Lions"))}};sel.onchange=upd;upd();autoPrinting(sel,c,true);
+  const upd=()=>{const pr=c.p[+sel.value]||c.p[0];$("csThumb").innerHTML="";$("csThumb").appendChild(thumbEl(pr&&pr[4],90));const bp=bestPrice(pr),sn=stockNote(pr);$("csPrice").textContent=(bp[0]!=null?money(bp[0]):"No price")+(sn?" · "+sn:"");
+    const L=$("csLinks");L.innerHTML="";if(pr){const a=document.createElement("a");a.href=`${YTG}/products/${encodeURIComponent(pr[1])}`;a.target="_blank";a.rel="noopener";a.textContent="Your Turn Games"+(pr[2]!=null?" · "+money(pr[2]):"")+(pr[3]===0?" (out)":"");L.append(a,tlLink(c.n,pr[1],"Three Lions"))}};sel.onchange=upd;upd();autoPrinting(sel,c,true);
   const ab=$("csAlts");ab.innerHTML="";
   if(alts.length){ab.append("Not it? ");alts.forEach((m,i)=>{const b=document.createElement("button");b.type="button";b.className="pick";b.textContent=m.n;
     b.onclick=()=>csShow(m,alts.filter(x=>x!==m).concat([c]),0,true);ab.append(b);if(i<alts.length-1)ab.append(", ")})}
@@ -2434,20 +2445,21 @@ async function bulkFind(src,say){
 
 let bulk=null; // {items:[{prep,pm,quad,c,i,sure,on,alts,checking}], img}
 function bulkSay(t){$("bulkStatus").textContent=t}
-async function bulkStart(file){
-  if(!file)return;const url=URL.createObjectURL(file);
+async function bulkStart(file,mode){
+  if(!file)return;const url=URL.createObjectURL(file),scanOnly=mode==="scan";
+  $("bulkTitle").textContent=scanOnly?"Bulk scan":"Bulk add";$("bulkAdd").hidden=scanOnly;$("bulkTotal").hidden=!scanOnly;$("bulkTotal").textContent="";
   $("bulk").hidden=false;document.body.style.overflow="hidden";$("bulkList").innerHTML="";$("bulkAdd").disabled=true;$("bulkAdd").textContent="Add cards";
   $("bulkMissBox").hidden=true;bulkSay("Opening the photo…");
   try{
     const img=await loadImage(url);bulkDrawPhoto(img,[]);
     const found=await bulkFind(img,bulkSay);
-    bulk={img,items:found.map(f=>{const it={...f,on:true,sure:false,c:null,i:0,alts:[]};
+    bulk={img,mode:scanOnly?"scan":"add",items:found.map(f=>{const it={...f,on:true,sure:false,c:null,i:0,alts:[]};
       if(f.pm){const pk=picPick(f.pm),b0=baseName(pk.c.n);it.c=pk.c;it.i=pk.i;it.sure=f.pm.ratio<PIC_FAST;
         it.alts=f.pm.top.map(t=>t.c).filter(c=>baseName(c.n)!==b0).slice(0,3)}
       if(!it.c)it.on=false;return it})};
     bulkRender();
     const unsure=bulk.items.filter(it=>!it.sure);
-    bulkSay(`Found ${bulk.items.length} card${bulk.items.length===1?"":"s"}.`+(unsure.length?` Double-checking ${unsure.length} by reading the name…`:" Check the list, then add them."));
+    bulkSay(`Found ${bulk.items.length} card${bulk.items.length===1?"":"s"}.`+(unsure.length?` Double-checking ${unsure.length} by reading the name…`:scanOnly?" Prices are below.":" Check the list, then add them."));
     for(const it of unsure){if(!bulk)return;it.checking=true;bulkRender();
       try{const r=await identifyPrep(it.prep,()=>{},it.pm);const top=r.matches[0];
         if(top&&top.d<=0.45){const tb=baseName(top.c.n);it.c=top.c;it.sure=top.d<=0.3;it.on=true;
@@ -2456,7 +2468,7 @@ async function bulkStart(file){
       }catch(e){console.warn("bulk read",e)}
       it.checking=false;bulkRender()}
     const left=bulk.items.filter(it=>!it.sure).length;
-    bulkSay(`Found ${bulk.items.length} card${bulk.items.length===1?"":"s"}.`+(left?` ${left} marked "Check this": make sure ${left===1?"it's":"they're"} right.`:" Check the list, then add them.")+" Missing one? Use Add a card it missed.");
+    bulkSay(`Found ${bulk.items.length} card${bulk.items.length===1?"":"s"}.`+(left?` ${left} marked "Check this": make sure ${left===1?"it's":"they're"} right.`:bulk.mode==="scan"?" Prices are below.":" Check the list, then add them.")+" Missing one? Use Add a card it missed.");
   }catch(e){bulkSay("Couldn't read that photo: "+e.message)}
   finally{URL.revokeObjectURL(url)}
 }
@@ -2484,10 +2496,13 @@ function bulkRender(){
     if(it.c){
       const bp=document.createElement("div");bp.className="bp";
       if(it.c.p.length>1){const sel=document.createElement("select");sel.setAttribute("aria-label",`Printing for card ${k+1}`);
-        it.c.p.forEach(([set,h,price],j)=>{const o=document.createElement("option");o.value=j;o.textContent=`${set||"Standard"} · ${money(price)}`;sel.appendChild(o)});
+        it.c.p.forEach((x,j)=>{const o=document.createElement("option");o.value=j;o.textContent=printLabel(x);sel.appendChild(o)});
         sel.value=String(it.i);sel.onchange=()=>{it.i=+sel.value;bulkRender()};bp.appendChild(sel)}
-      else bp.textContent=`${pr[0]||"Standard"} · ${money(pr[2])}`;
-      info.appendChild(bp)}
+      else bp.textContent=printLabel(pr);
+      info.appendChild(bp);
+      if(bulk.mode==="scan"){const sl=document.createElement("div");sl.className="links bulk-links";const y=document.createElement("a");
+        y.href=`${YTG}/products/${encodeURIComponent(pr[1])}`;y.target="_blank";y.rel="noopener";y.textContent="Your Turn Games"+(pr[2]!=null?" · "+money(pr[2]):"")+(pr[3]===0?" (out)":"");
+        sl.append(y,tlLink(it.c.n,pr[1],"Three Lions"));info.appendChild(sl)}}
     const acts=document.createElement("div");acts.className="acts";
     if(it.c){const tg=document.createElement("button");tg.type="button";tg.textContent=it.on?"Leave out":"Include";tg.setAttribute("aria-pressed",String(!it.on));tg.onclick=()=>{it.on=!it.on;bulkRender();bulkCount()};acts.appendChild(tg)}
     const fix=document.createElement("button");fix.type="button";fix.textContent="Wrong card?";acts.appendChild(fix);
@@ -2504,7 +2519,8 @@ function bulkRender(){
     row.append(num,pics,info);list.appendChild(row)});
   bulkCount();
 }
-function bulkCount(){const n=bulk?bulk.items.filter(it=>it.on&&it.c).length:0;const b=$("bulkAdd");b.disabled=!n;b.textContent=n?`Add ${n} card${n===1?"":"s"} to my collection`:"Nothing to add yet"}
+function bulkCount(){const on=bulk?bulk.items.filter(it=>it.on&&it.c):[],n=on.length;const b=$("bulkAdd");b.disabled=!n;b.textContent=n?`Add ${n} card${n===1?"":"s"} to my collection`:"Nothing to add yet";
+  if(bulk&&bulk.mode==="scan"){const tot=on.reduce((a,it)=>a+(bestPrice(it.c.p[it.i]||it.c.p[0])[0]||0),0);$("bulkTotal").innerHTML=n?`${n} card${n===1?"":"s"} · worth <b>${money(tot)}</b>`:"No cards picked"}}
 function bulkAddAll(){
   if(!bulk)return;let n=0;
   for(const it of bulk.items){if(!it.on||!it.c)continue;const [set,h,price,,ti]=it.c.p[it.i]||it.c.p[0];
@@ -2512,7 +2528,7 @@ function bulkAddAll(){
   saveColl();renderColl();bulkClose();$("collSub").textContent=`Added ${n} card${n===1?"":"s"} from your photo.`;
   if(navigator.vibrate)try{navigator.vibrate(40)}catch(e){}
 }
-function bulkClose(){bulk=null;$("bulk").hidden=true;document.body.style.overflow="";$("bulkFile").value=""}
+function bulkClose(){bulk=null;$("bulk").hidden=true;document.body.style.overflow="";$("bulkFile").value="";$("bulkScanFile").value=""}
 function bulkMissing(){const box=$("bulkMissBox");box.hidden=!box.hidden;if(!box.hidden)$("bulkQ").focus()}
 function bulkMissSearch(){const res=$("bulkRes");res.innerHTML="";for(const c of searchCards($("bulkQ").value).slice(0,6)){const b=document.createElement("button");b.type="button";b.className="pick";b.textContent=c.n;
   b.onclick=()=>{if(!bulk)return;bulk.items.push({quad:[[0,0],[0,0],[0,0],[0,0]],prep:{card:bulkBlank()},pm:null,c,i:0,sure:true,on:true,alts:[],added:true});$("bulkQ").value="";res.innerHTML="";$("bulkMissBox").hidden=true;bulkRender()};res.appendChild(b)}}
@@ -2624,7 +2640,7 @@ function showInstallTip(){
   $("askClaude").onclick=askClaude;
   $("tabScan").onclick=()=>setTab("scan");$("tabTrade").onclick=()=>setTab("trade");$("tabColl").onclick=()=>setTab("collection");
   $("shareTrade").onclick=shareTrade;
-  $("bulkFile").onchange=e=>bulkStart(e.target.files[0]);$("bulkClose").onclick=bulkClose;$("bulkAdd").onclick=bulkAddAll;$("bulkMissBtn").onclick=bulkMissing;$("bulkQ").oninput=bulkMissSearch;
+  $("bulkFile").onchange=e=>bulkStart(e.target.files[0]);$("bulkScanFile").onchange=e=>{if(camState!=="off")stopCamera(true);bulkStart(e.target.files[0],"scan")};$("bulkClose").onclick=bulkClose;$("bulkAdd").onclick=bulkAddAll;$("bulkMissBtn").onclick=bulkMissing;$("bulkQ").oninput=bulkMissSearch;
   $("csStart").onclick=csStart;$("csStop").onclick=csStop;$("csAdd").onclick=csAdd;$("csSkip").onclick=csSkip;
   document.addEventListener("visibilitychange",()=>{if(document.hidden&&cs.state!=="off")csStop()});
   $("liveStart").onclick=()=>{stopQrScan();trade.theirs=[];saveTrade(false);startLive(newRoom())};
