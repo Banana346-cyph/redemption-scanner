@@ -852,6 +852,48 @@ function insetSides(q,band){ // move the given sides in by the border width
   const Hm=homography([[0,0],[1,0],[1,1],[0,1]],q),[bx,by]=OUT_INSET,u0=band[3]?bx:0,u1=band[1]?1-bx:1,v0=band[0]?by:0,v1=band[2]?1-by:1;
   return [[u0,v0],[u1,v0],[u1,v1],[u0,v1]].map(([u,v])=>{const z=Hm[6]*u+Hm[7]*v+1;return [(Hm[0]*u+Hm[1]*v+Hm[2])/z,(Hm[3]*u+Hm[4]*v+Hm[5])/z]});
 }
+function trimSleeve(q,dist,SW,SH){ // a clear sleeve is a bit bigger than the card: if a side has a strip that looks like the table (seen through the plastic), move it in to the card's edge
+  const S=(Math.hypot(q[1][0]-q[0][0],q[1][1]-q[0][1])+Math.hypot(q[2][0]-q[1][0],q[2][1]-q[1][1]))/2,c=q.reduce((t,p)=>[t[0]+p[0]/4,t[1]+p[1]/4],[0,0]);
+  const D=Math.round(S*0.13),shift=[0,0,0,0],lines=[];
+  for(let k=0;k<4;k++){const A=q[k],B=q[(k+1)%4],L=Math.hypot(B[0]-A[0],B[1]-A[1]),tx=(B[0]-A[0])/L,ty=(B[1]-A[1])/L;let nx=-ty,ny=tx;
+    if(((A[0]+B[0])/2-c[0])*nx+((A[1]+B[1])/2-c[1])*ny>0){nx=-nx;ny=-ny} // point inwards
+    const prof=[];for(let dd=0;dd<=D;dd++){const v=[];for(let t=0.12;t<0.89;t+=0.04){const x=Math.round(A[0]+(B[0]-A[0])*t+nx*dd),y=Math.round(A[1]+(B[1]-A[1])*t+ny*dd);if(x>=0&&y>=0&&x<SW&&y<SH)v.push(dist[y*SW+x])}prof.push(v.length?percentile(v,0.5):0)}
+    const inner=percentile(prof.slice(Math.round(D*0.65)),0.5),lim=Math.round(S*0.075);let gap=-1;
+    for(let dd=1;dd<=lim;dd++)if(prof[dd]<0.4*inner)gap=dd;
+    if(gap>0&&inner>40){let e=gap+1;while(e<D&&prof[e]<0.6*inner)e++;if(e<=lim+3)shift[k]=e}
+    lines.push({A,B,nx,ny})}
+  if(window.__dbgMasks)window.__sleeve=shift;
+  if(!shift.some(Boolean))return q;
+  const L2=lines.map((l,k)=>({p:[l.A[0]+l.nx*shift[k],l.A[1]+l.ny*shift[k]],d:[l.B[0]-l.A[0],l.B[1]-l.A[1]]}));
+  const cross=(a,b)=>{const den=a.d[0]*b.d[1]-a.d[1]*b.d[0];if(Math.abs(den)<1e-6)return null;const t=((b.p[0]-a.p[0])*b.d[1]-(b.p[1]-a.p[1])*b.d[0])/den;return [a.p[0]+a.d[0]*t,a.p[1]+a.d[1]*t]};
+  const out=[cross(L2[3],L2[0]),cross(L2[0],L2[1]),cross(L2[1],L2[2]),cross(L2[2],L2[3])];
+  return out.every(Boolean)&&isConvex(out)&&Math.abs(quadAspect(out)-0.716)<0.1?out:q;
+}
+function tableQuad(d,SW,SH){ // the whole card standing out from a plain table (full-art / borderless cards have no white border to find)
+  const N=SW*SH,m=Math.max(3,Math.round(Math.min(SW,SH)*0.03)),ring=[[],[],[]];
+  for(let y=0;y<SH;y++)for(let x=0;x<SW;x++){if(x>=m&&x<SW-m&&y>=m&&y<SH-m)continue;const i=(y*SW+x)*4;ring[0].push(d[i]);ring[1].push(d[i+1]);ring[2].push(d[i+2])}
+  const bg=ring.map(a=>percentile(a,0.5)),dist=new Float32Array(N);
+  for(let i=0;i<N;i++)dist[i]=Math.max(Math.abs(d[i*4]-bg[0]),Math.abs(d[i*4+1]-bg[1]),Math.abs(d[i*4+2]-bg[2]));
+  const rd=[];for(let y=0;y<SH;y+=2)for(let x=0;x<SW;x+=2)if(x<m||x>=SW-m||y<m||y>=SH-m)rd.push(dist[y*SW+x]);
+  const noise=percentile(rd,0.5);if(noise>60)return null; // the table is too busy to tell the card apart
+  const smp=[];for(let i=0;i<N;i+=3)smp.push(dist[i]);const ot=otsu(smp,0,256);
+  let best=null;
+  for(const thr of [Math.max(30,ot),Math.max(30,noise*2+20),Math.max(30,ot*0.7)]){const mask=new Uint8Array(N);for(let i=0;i<N;i++)mask[i]=dist[i]>thr?1:0;
+  for(const r of [0,2,4])for(const q0 of quadsFromMask(r?erode(mask,SW,SH,r):mask,SW,SH)){
+    const q=orderQuad(q0);if(!isConvex(q)||!rightAngles(q))continue;const asp=quadAspect(q),a=polyArea(q);
+    if(Math.abs(asp-0.716)>0.09||a<0.04*N)continue;
+    // solid inside, plain table just outside
+    const c=q.reduce((t,p)=>[t[0]+p[0]/4,t[1]+p[1]/4],[0,0]),at=(f,k)=>{const P=q[k];return [c[0]+(P[0]-c[0])*f,c[1]+(P[1]-c[1])*f]};
+    let inn=0,ni=0,out=0,no=0;
+    for(let k=0;k<4;k++){const A=q[k],B=q[(k+1)%4];for(let t=0.05;t<0.96;t+=0.05)for(const [f,isIn] of [[0.9,1],[0.95,1],[1.05,0],[1.09,0]]){
+      const x=Math.round(c[0]+((A[0]+(B[0]-A[0])*t)-c[0])*f),y=Math.round(c[1]+((A[1]+(B[1]-A[1])*t)-c[1])*f);if(x<0||y<0||x>=SW||y>=SH)continue;
+      if(isIn){ni++;inn+=mask[y*SW+x]}else{no++;out+=1-mask[y*SW+x]}}}
+    const fi=ni?inn/ni:0,fo=no?out/no:0;if(fi<0.8||fo<0.8)continue;
+    const sc=fi+fo-Math.abs(asp-0.716)*2;if(!best||sc>best.sc)best={q,sc,a}}}
+  if(best&&window.__sleeveTrim)best.q=trimSleeve(best.q,dist,SW,SH); // off: it also cut into unsleeved cards
+  if(window.__dbgMasks)window.__tq=best&&{sc:+best.sc.toFixed(2),q:best.q.map(p=>p.map(Math.round))};
+  return best;
+}
 function brightImg(d,N){const w=new Float32Array(N);for(let i=0;i<N;i++){const r=d[i*4],g=d[i*4+1],b=d[i*4+2],lo=Math.min(r,g,b),hi=Math.max(r,g,b);w[i]=(hi+lo)/2-0.15*(hi-lo)}return w} // foil borders: bright but rainbow-coloured
 function whiteImg(d,N){const w=new Float32Array(N);for(let i=0;i<N;i++){const r=d[i*4],g=d[i*4+1],b=d[i*4+2],lo=Math.min(r,g,b),hi=Math.max(r,g,b);w[i]=lo-0.6*(hi-lo)}return w}
 function sampleW(w,SW,SH,x,y){x=Math.round(x);y=Math.round(y);if(x<0||y<0||x>=SW||y>=SH)return null;return w[y*SW+x]}
@@ -1088,6 +1130,14 @@ function detectCard(src,opts){ // src canvas -> 4 corners [tl,tr,br,bl] in src c
     if(whole)best={q:whole.q,v:whole.v,sc:best.sc}}
   // outside-edge check: confirms the white-border answer, catches full-art cards, and stops us from picking a part of a card
   let pick=best?best.q:null,how=best?"border":"none";
+  // a card sitting on a plain table: its whole outline stands out. Use it when there's no clean white border, or when what we found is only part of it
+  let table=null;
+  if(!multi&&!window.__noTable&&!(best&&best.v>=0.9&&borderBand(W,SW,SH,best.q))){const t=tableQuad(d,SW,SH);
+    if(t){const ti=innerFromOuter(t.q),inQ=(q,c)=>{for(let i=0;i<4;i++){const a=q[i],b=q[(i+1)%4];if((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])<0)return false}return true};
+      const ta=polyArea(ti),part=best&&best.q.every(p=>inQ(t.q,p))&&polyArea(best.q)<0.7*ta;
+      const inside=best&&best.q.every(p=>inQ(t.q,p)); // a find inside the outline and nearly as big = the card inside a sleeve: keep it, it's more exact
+      if(!best||part||(!inside&&best.v<0.85)||best.v<(window.__tableV??0.45))table=ti}}
+  if(table){pick=table;how="table"}else
   if(!window.__noOuter&&!(best&&best.v>=0.8&&borderBand(W,SW,SH,best.q))){ // a clean white-bordered find needs no second opinion
     const outs=getOuts().map(o=>({...o,inner:innerFromOuter(o.q)}));
     const wq=q=>(Math.hypot(q[1][0]-q[0][0],q[1][1]-q[0][1])+Math.hypot(q[2][0]-q[3][0],q[2][1]-q[3][1]))/2;
@@ -1106,7 +1156,7 @@ function detectCard(src,opts){ // src canvas -> 4 corners [tl,tr,br,bl] in src c
       if(bigger.length){pick=bigger[0].inner;how="edge"}
     }
   }
-  {const fb=pick&&!window.__noFoil?foilBand(d,SW,SH,pick):null;if(fb){pick=insetSides(pick,fb);how+="+foil-outline"}} // we found a foil card's outside edge: step in to the picture frame
+  {const fb=pick&&how!=="table"&&!window.__noFoil?foilBand(d,SW,SH,pick):null;if(fb){pick=insetSides(pick,fb);how+="+foil-outline"}} // we found a foil card's outside edge: step in to the picture frame
   window.__lastDetect={n:nc,best:best&&best.v,how};
   return pick?pick.map(([x,y])=>[x/s,y/s]):null;
 }
@@ -1207,7 +1257,7 @@ function otsu(vals,lo,hi){
     const d=m0/w0-(sum-m0)/w1,v=w0*w1*d*d;if(v>best){best=v;bi=i}}
   return lo+(bi+1)*(hi-lo)/B;
 }
-const NAME_MODES=["A","B","C","D"];
+const NAME_MODES=["A","B","C","D"],NAME_SHIFTS=[22,44],NAME_RETRY_CONF=70,NAME_SHIFT_HOW=/^(table|edge|outside-edge)/;
 function nameModes(cardHi,foil){ // a light (silver/white) name banner needs a higher cut so the letters separate from it; foil gets its own cut
   if(foil)return [...NAME_MODES,"F","G"];
   const k=2,c=document.createElement("canvas"),w=NAME.w,h=NAME.h;c.width=w;c.height=h;const g=ctx2d(c);
@@ -1216,10 +1266,10 @@ function nameModes(cardHi,foil){ // a light (silver/white) name banner needs a h
   const med=percentile(v,0.5),top=percentile(v,0.995);
   return med>0.55*top&&med>110?[...NAME_MODES,"E"]:NAME_MODES; // light banner or full-art sky behind the name: add the outline cut
 }
-function nameBinary(cardHi,k,mode="A"){ // cardHi is k*500 x k*700
+function nameBinary(cardHi,k,mode="A",dy=0){ // cardHi is k*500 x k*700; dy moves the strip down (cards found inside a sleeve sit a little lower)
   const S=3,w=NAME.w*S,h=NAME.h*S;
   const c=document.createElement("canvas");c.width=w;c.height=h;const g=ctx2d(c);g.imageSmoothingQuality="high";
-  g.drawImage(cardHi,NAME.x*k,NAME.y*k,NAME.w*k,NAME.h*k,0,0,w,h);
+  g.drawImage(cardHi,NAME.x*k,(NAME.y+dy)*k,NAME.w*k,NAME.h*k,0,0,w,h);
   const d=g.getImageData(0,0,w,h).data,N=w*h,score=new Float32Array(N);
   const lit=mode==="F"||mode==="G"; // foil: the rainbow tints the white letters too, so go by lightness instead of whiteness
   for(let i=0;i<N;i++){const r=d[i*4],gg=d[i*4+1],b=d[i*4+2];const mn=Math.min(r,gg,b),mx=Math.max(r,gg,b);score[i]=lit?(mx+mn)/2:mn-0.6*(mx-mn)}
@@ -1684,8 +1734,9 @@ function prepareFromQuad(src,q0,opts){ // q0: rough corners in source pixels (or
   const card=warp(c,q,CW,CH),fast=!!(opts&&opts.fast);let cardHi=fast?null:warp(c,q,CW*2,CH*2);
   let cardOuter=null;if(quad){const [bx,by]=OUT_INSET,ex=bx/(1-2*bx),ey=by/(1-2*by),Hq=homography([[0,0],[1,0],[1,1],[0,1]],q);
     const oq=[[-ex,-ey],[1+ex,-ey],[1+ex,1+ey],[-ex,1+ey]].map(([u,v])=>{const z=Hq[6]*u+Hq[7]*v+1;return [(Hq[0]*u+Hq[1]*v+Hq[2])/z,(Hq[3]*u+Hq[4]*v+Hq[5])/z]});cardOuter=warp(c,oq,CW,CH)}
-  const F=quad&&!window.__noFlat?borderLight(c,q):null;if(F){flattenLight(card,F);if(cardHi)flattenLight(cardHi,F)}
-  const out={found:!!quad,card,cardHi,cardOuter,quad:srcQuad,flat:!!F};
+  const noWhite=/^(table|edge|outside-edge|none)/.test((window.__lastDetect||{}).how||""); // found without a white border: nothing white to set the brightness from
+  const F=quad&&!window.__noFlat&&!noWhite?borderLight(c,q):null;if(F){flattenLight(card,F);if(cardHi)flattenLight(cardHi,F)}
+  const out={found:!!quad,card,cardHi,cardOuter,quad:srcQuad,flat:!!F,how:(window.__lastDetect||{}).how||""};
   if(fast)out.hi=()=>{if(!out.cardHi){out.cardHi=warp(c,q,CW*2,CH*2);if(F)flattenLight(out.cardHi,F)}return out.cardHi}; // the big version is only needed for reading names
   return out;
 }
@@ -1924,11 +1975,12 @@ function picMatch(card,outer){ // -> {top:[{c,i,d}] best per card name, ratio: b
   // foil: the rainbow sheen scrambles colours, so lean on light/dark shapes instead (less so when we're not sure it's foil)
   const fs=foilScore(outer),foil=fs.f>=0.6&&!window.__noFoil;if(foil){q.cw=fs.cv<0.2?0.25:0.5;if(q2)q2.cw=q.cw}
   if(window.__cw!=null){q.cw=window.__cw;if(q2)q2.cw=window.__cw}
-  const quick=(f,o)=>{let s=0;const m=PGW*PGH,cw=f.cw??1;for(let k=0;k<m;k++){if(!f.w[k])continue;const a=PICS[o+k]-f.v[k],b=PICS[o+m+k]-f.v[m+k],c=PICS[o+2*m+k]-f.v[2*m+k];s+=a*a+cw*(b*b+c*c)}return s};
+  // quick rough pass: each cell's difference is capped so a few glare / foil cells can't push the right picture out of the shortlist
+  const CAP=window.__qcap??2000,quick=(f,o)=>{let s=0;const m=PGW*PGH,cw=f.cw??1;for(let k=0;k<m;k++){if(!f.w[k])continue;const a=PICS[o+k]-f.v[k],b=PICS[o+m+k]-f.v[m+k],c=PICS[o+2*m+k]-f.v[2*m+k],e=a*a+cw*(b*b+c*c);s+=e<CAP?e:CAP}return s};
   const pre=[];
   for(let t=0;t<n;t++){const o=t*PD;if(PICS[o]===-128||!own.has(t))continue;let s=quick(q,o);if(q2){const s2=quick(q2,o);if(s2<s)s=s2}pre.push([s,t])}
   pre.sort((a,b)=>a[0]-b[0]);
-  for(const [,t] of pre.slice(0,80)){const o=t*PD,ow=own.get(t);
+  for(const [,t] of pre.slice(0,window.__qkeep??600)){const o=t*PD,ow=own.get(t);
     let s=picDist(PICS,o,q,0,tmp);
     if(q2){const s2=picDist(PICS,o,q2,0,tmp);if(s2<s)s=s2} // full-art pictures have no white border to trim
     const b=best.get(ow[0]);if(!b||s<b.d)best.set(ow[0],{c:ow[0],i:ow[1],d:s})}
@@ -2101,6 +2153,8 @@ async function identifyPrep(prepI,say,pmKnown){ // a straightened card -> best m
   say("Reading the name…");const w=await getWorker();
   if(!w)return {matches:combinePic([],pm),raw:"",error:pm?"":ocrError,card};
   const cands=[];for(const m of nameModes(cardHi,pm&&pm.foil)){const r=await withTimeout(w.recognize(nameBinary(cardHi,2,m)),20000,"Reading the name");cands.push({name:cleanName(r.data.text),conf:r.data.confidence})}
+  if(NAME_SHIFT_HOW.test(prepI.how||"")&&pickName(cands).conf<NAME_RETRY_CONF) // no white border to line up on (sleeve, full-art): the name may sit a little lower
+    for(const dy of NAME_SHIFTS)for(const m of (pm&&pm.foil?["A","F"]:["A","B"])){const r=await withTimeout(w.recognize(nameBinary(cardHi,2,m,dy)),20000,"Reading the name");cands.push({name:cleanName(r.data.text),conf:r.data.confidence})}
   const best=pickName(cands),readings=[best.fixedName,...cands.map(c=>c.name)];
   const ls=await maybeLostSoul(cardHi,card,readings,res.type,w,say);
   if(ls)return {matches:[{c:ls.card,d:ls.sure?0:0.4,s:0}],raw:best.fixedName,card};
