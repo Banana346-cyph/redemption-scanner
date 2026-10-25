@@ -869,6 +869,12 @@ function trimSleeve(q,dist,SW,SH){ // a clear sleeve is a bit bigger than the ca
   const out=[cross(L2[3],L2[0]),cross(L2[0],L2[1]),cross(L2[1],L2[2]),cross(L2[2],L2[3])];
   return out.every(Boolean)&&isConvex(out)&&Math.abs(quadAspect(out)-0.716)<0.1?out:q;
 }
+function ringStats(d,SW,SH,qi,qo){ // colour of the strip between an inner and an outer outline -> {lit, sat}: a white border is lit and grey, a foil border lit and colourful
+  let n=0,L=0,S=0;for(let k=0;k<4;k++)for(let t=0.08;t<0.93;t+=0.04)for(const f of [0.3,0.5,0.7]){
+    const a=qi[k],b=qi[(k+1)%4],A=qo[k],B=qo[(k+1)%4],x=Math.round((a[0]+(b[0]-a[0])*t)*(1-f)+(A[0]+(B[0]-A[0])*t)*f),y=Math.round((a[1]+(b[1]-a[1])*t)*(1-f)+(A[1]+(B[1]-A[1])*t)*f);
+    if(x<0||y<0||x>=SW||y>=SH)continue;const i=(y*SW+x)*4,hi=Math.max(d[i],d[i+1],d[i+2]),lo=Math.min(d[i],d[i+1],d[i+2]);n++;L+=hi;S+=hi-lo}
+  return n?{lit:L/n,sat:S/n}:{lit:0,sat:0};
+}
 function tableQuad(d,SW,SH){ // the whole card standing out from a plain table (full-art / borderless cards have no white border to find)
   const N=SW*SH,m=Math.max(3,Math.round(Math.min(SW,SH)*0.03)),ring=[[],[],[]];
   for(let y=0;y<SH;y++)for(let x=0;x<SW;x++){if(x>=m&&x<SW-m&&y>=m&&y<SH-m)continue;const i=(y*SW+x)*4;ring[0].push(d[i]);ring[1].push(d[i+1]);ring[2].push(d[i+2])}
@@ -1131,10 +1137,10 @@ function detectCard(src,opts){ // src canvas -> 4 corners [tl,tr,br,bl] in src c
   // outside-edge check: confirms the white-border answer, catches full-art cards, and stops us from picking a part of a card
   let pick=best?best.q:null,how=best?"border":"none";
   // a card sitting on a plain table: its whole outline stands out. Use it when there's no clean white border, or when what we found is only part of it
-  let table=null;
-  if(!multi&&!window.__noTable&&!(best&&best.v>=0.9&&borderBand(W,SW,SH,best.q))){const t=tableQuad(d,SW,SH);
+  let table=null,tqMemo;const getTQ=()=>tqMemo!==undefined?tqMemo:(tqMemo=window.__noTable?null:tableQuad(d,SW,SH));
+  if(!multi&&!window.__noTable&&!(best&&best.v>=0.9&&borderBand(W,SW,SH,best.q))){const t=getTQ();
     if(t){const ti=innerFromOuter(t.q),inQ=(q,c)=>{for(let i=0;i<4;i++){const a=q[i],b=q[(i+1)%4];if((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])<0)return false}return true};
-      const ta=polyArea(ti),part=best&&best.q.every(p=>inQ(t.q,p))&&polyArea(best.q)<0.7*ta;
+      const ta=polyArea(ti),part=best&&best.q.every(p=>inQ(t.q,p))&&(polyArea(best.q)<0.7*ta||(polyArea(best.q)<0.88*ta&&(rs=>rs.lit>=110&&rs.sat>=30)(ringStats(d,SW,SH,best.q,t.q)))); // a bright, colourful strip between our find and the card's outline: we found the inside of a foil card's border
       const inside=best&&best.q.every(p=>inQ(t.q,p)); // a find inside the outline and nearly as big = the card inside a sleeve: keep it, it's more exact
       if(!best||part||(!inside&&best.v<0.85)||best.v<(window.__tableV??0.45))table=ti}}
   if(table){pick=table;how="table"}else
@@ -1145,7 +1151,9 @@ function detectCard(src,opts){ // src canvas -> 4 corners [tl,tr,br,bl] in src c
     const inside=(q,c)=>{for(let i=0;i<4;i++){const a=q[i],b=q[(i+1)%4];if((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])<0)return false}return true};
     if(window.__dbgMasks)window.__outs=outs.map(o=>[o.q.map(p=>p.map(Math.round)),+o.es.toFixed(2)]);
     const cd=(a,b)=>Math.max(...a.map((p,i)=>Math.hypot(p[0]-b[i][0],p[1]-b[i][1])))/wq(b);
+    const tq=best&&!table?getTQ():null;
     if(best&&outs.some(o=>near(o.inner,best.q))){how="border+edge"} // the card's outline sits just outside the white border: confirmed
+    else if(tq&&near(innerFromOuter(tq.q),best.q)){how="border+table"} // the whole card on the table lines up with our find (a foil card's coloured border): confirmed
     else if(best&&!borderBand(W,SW,SH,best.q)&&outs.some(o=>cd(o.q,best.q)<0.06)){pick=innerFromOuter(best.q);how="outside-edge"} // no white border: we found the card's outside edge
     else{
       const cen=best?best.q.reduce((a,p)=>[a[0]+p[0]/4,a[1]+p[1]/4],[0,0]):null;
@@ -1156,7 +1164,7 @@ function detectCard(src,opts){ // src canvas -> 4 corners [tl,tr,br,bl] in src c
       if(bigger.length){pick=bigger[0].inner;how="edge"}
     }
   }
-  {const fb=pick&&how!=="table"&&!window.__noFoil?foilBand(d,SW,SH,pick):null;if(fb){pick=insetSides(pick,fb);how+="+foil-outline"}} // we found a foil card's outside edge: step in to the picture frame
+  {const fb=pick&&!/table/.test(how)&&!window.__noFoil?foilBand(d,SW,SH,pick):null;if(fb){pick=insetSides(pick,fb);how+="+foil-outline"}} // we found a foil card's outside edge: step in to the picture frame
   window.__lastDetect={n:nc,best:best&&best.v,how};
   return pick?pick.map(([x,y])=>[x/s,y/s]):null;
 }
@@ -1258,6 +1266,13 @@ function otsu(vals,lo,hi){
   return lo+(bi+1)*(hi-lo)/B;
 }
 const NAME_MODES=["A","B","C","D"],NAME_SHIFTS=[22,44],NAME_RETRY_CONF=70,NAME_SHIFT_HOW=/^(table|edge|outside-edge)/;
+async function readNameCands(cardHi,foil,how,w,alive){ // every way of reading the name strip -> [{name,conf,b}] (null if a newer scan took over). Used by the Scan tab and photo adds alike.
+  const cands=[],one=async b=>{const r=await withTimeout(w.recognize(b),20000,"Reading the name");if(alive&&!alive())return false;cands.push({name:cleanName(r.data.text),conf:r.data.confidence,b});return true};
+  for(const m of nameModes(cardHi,foil))if(!await one(nameBinary(cardHi,2,m)))return null;
+  if(NAME_SHIFT_HOW.test(how||"")&&pickName(cands).conf<NAME_RETRY_CONF) // no white border to line up on (sleeve, full-art): the name may sit a little lower
+    for(const dy of NAME_SHIFTS)for(const m of (foil?["A","F"]:["A","B"]))if(!await one(nameBinary(cardHi,2,m,dy)))return null;
+  return cands;
+}
 function nameModes(cardHi,foil){ // a light (silver/white) name banner needs a higher cut so the letters separate from it; foil gets its own cut
   if(foil)return [...NAME_MODES,"F","G"];
   const k=2,c=document.createElement("canvas"),w=NAME.w,h=NAME.h;c.width=w;c.height=h;const g=ctx2d(c);
@@ -1711,12 +1726,12 @@ function flattenLight(card,F){ // edits card canvas in place
 function prepareCard(src){
   const [W,H]=srcSize(src);
   const coarse=cropFrom(src,0,0,W,H,1200);whiteBalance(coarse.c);
-  const q0=detectCard(coarse.c);
-  return prepareFromQuad(src,q0&&q0.map(([x,y])=>[x/coarse.s,y/coarse.s]));
+  const q0=detectCard(coarse.c),how0=(window.__lastDetect||{}).how||"";
+  return prepareFromQuad(src,q0&&q0.map(([x,y])=>[x/coarse.s,y/coarse.s]),{how0});
 }
 function prepareFromQuad(src,q0,opts){ // q0: rough corners in source pixels (or null) -> zoom in, refine, straighten
   const [W,H]=srcSize(src);
-  let work,quad=null;
+  let work,quad=null,how=opts&&opts.how0!=null?opts.how0:(opts&&opts.fast?"border":""); // how the chosen outline was found (bulk finds use white borders only)
   if(q0){
     const xs=q0.map(p=>p[0]),ys=q0.map(p=>p[1]);
     const bw=Math.max(...xs)-Math.min(...xs),bh=Math.max(...ys)-Math.min(...ys),m=0.12;
@@ -1727,16 +1742,19 @@ function prepareFromQuad(src,q0,opts){ // q0: rough corners in source pixels (or
     const area=q=>Math.abs(q.reduce((a,p,i)=>{const n=q[(i+1)%4];return a+p[0]*n[1]-n[0]*p[1]},0))/2;
     const cen=q=>q.reduce((a,p)=>[a[0]+p[0]/4,a[1]+p[1]/4],[0,0]),cq=cen(qc),cr=qr&&cen(qr);
     const ratio=qr?area(qr)/area(qc):0,shift=qr?Math.hypot(cr[0]-cq[0],cr[1]-cq[1])/Math.sqrt(area(qc)):9;
-    quad=qr&&ratio>0.7&&ratio<1.43&&shift<0.25?qr:qc; // the first look competes with the zoomed-in guesses, but a different size or spot means the zoom latched onto a part or a neighbour
-  }else{work=cropFrom(src,0,0,W,H,2400);whiteBalance(work.c)}
+    const hr=qr?(window.__lastDetect||{}).how||"":"";
+    let useR=qr&&ratio>0.7&&ratio<1.43&&shift<0.25; // the first look competes with the zoomed-in guesses, but a different size or spot means the zoom latched onto a part or a neighbour
+    if(useR&&/^table/.test(how)&&!/^table/.test(hr)&&ratio<0.9)useR=false; // the whole card standing out from the table beats a smaller find inside it (a foil card's art frame)
+    quad=useR?qr:qc;if(useR)how=hr;
+  }else{work=cropFrom(src,0,0,W,H,2400);whiteBalance(work.c);how=(window.__lastDetect||{}).how||""}
   const c=work.c,q=quad||[[0,0],[c.width,0],[c.width,c.height],[0,c.height]];
   const srcQuad=quad?q.map(([x,y])=>[x/work.s+(work.x0||0),y/work.s+(work.y0||0)]):null;
   const card=warp(c,q,CW,CH),fast=!!(opts&&opts.fast);let cardHi=fast?null:warp(c,q,CW*2,CH*2);
   let cardOuter=null;if(quad){const [bx,by]=OUT_INSET,ex=bx/(1-2*bx),ey=by/(1-2*by),Hq=homography([[0,0],[1,0],[1,1],[0,1]],q);
     const oq=[[-ex,-ey],[1+ex,-ey],[1+ex,1+ey],[-ex,1+ey]].map(([u,v])=>{const z=Hq[6]*u+Hq[7]*v+1;return [(Hq[0]*u+Hq[1]*v+Hq[2])/z,(Hq[3]*u+Hq[4]*v+Hq[5])/z]});cardOuter=warp(c,oq,CW,CH)}
-  const noWhite=/^(table|edge|outside-edge|none)/.test((window.__lastDetect||{}).how||""); // found without a white border: nothing white to set the brightness from
+  const noWhite=!quad||/^(table|edge|outside-edge|none)/.test(how); // found without a white border: nothing white to set the brightness from
   const F=quad&&!window.__noFlat&&!noWhite?borderLight(c,q):null;if(F){flattenLight(card,F);if(cardHi)flattenLight(cardHi,F)}
-  const out={found:!!quad,card,cardHi,cardOuter,quad:srcQuad,flat:!!F,how:(window.__lastDetect||{}).how||""};
+  const out={found:!!quad,card,cardHi,cardOuter,quad:srcQuad,flat:!!F,how:quad?how:"none"};
   if(fast)out.hi=()=>{if(!out.cardHi){out.cardHi=warp(c,q,CW*2,CH*2);if(F)flattenLight(out.cardHi,F)}return out.cardHi}; // the big version is only needed for reading names
   return out;
 }
@@ -1759,9 +1777,9 @@ async function scan(src,{from}={}){
   $("alts").innerHTML="Next closest: "+res.ranked.slice(1,3).map(([k])=>`<b>${TYPES[k].label}</b>`).join(", ");
   $("teachSel").value=res.type;
   // name
-  const bins=nameModes(cardHi).map(m=>nameBinary(cardHi,2,m));
+  const foil=!!(current.pic&&current.pic.foil);
   const showBin=b=>{const nv=$("nameView");nv.width=b.width;nv.height=b.height;nv.getContext("2d").drawImage(b,0,0)};
-  showBin(bins[0]);
+  showBin(nameBinary(cardHi,2,"A"));
   const nameEl=$("nameOut");nameEl.className="name pending";nameEl.textContent="Reading name…";$("nameConf").textContent="";$("links").innerHTML="";$("others").innerHTML="";$("priceLine").innerHTML="";
   setStatus(found?"Card found. Reading the name…":"Couldn't see the card edges. Try a darker background behind the card. Reading anyway…");
   if(current.pic&&current.pic.ratio<PIC_FAST){ // the picture alone is a clear match: done, no need to read the name
@@ -1778,9 +1796,7 @@ async function scan(src,{from}={}){
     setStatus(ocrError+(claudeOk?" Tap Read name with Claude instead.":" Card type still works."),true);return}
   try{
     setStatus("Reading the name…");
-    const cands=[];
-    for(const b of bins){const r=await withTimeout(w.recognize(b),20000,"Reading the name");if(id!==scanId)return;
-      cands.push({name:cleanName(r.data.text),conf:r.data.confidence,b});}
+    const cands=await readNameCands(cardHi,foil,prep.how,w,()=>id===scanId);if(!cands)return;
     const best=pickName(cands);
     showBin(best.b);
     const readings=[best.fixedName,...cands.map(c=>c.name)];
@@ -2152,9 +2168,7 @@ async function identifyPrep(prepI,say,pmKnown){ // a straightened card -> best m
   if(pm&&pm.ratio<PIC_FAST){const pk=picPick(pm);return {matches:[{c:pk.c,d:0,s:0}],raw:pk.c.n,card,printing:pk.i}}
   say("Reading the name…");const w=await getWorker();
   if(!w)return {matches:combinePic([],pm),raw:"",error:pm?"":ocrError,card};
-  const cands=[];for(const m of nameModes(cardHi,pm&&pm.foil)){const r=await withTimeout(w.recognize(nameBinary(cardHi,2,m)),20000,"Reading the name");cands.push({name:cleanName(r.data.text),conf:r.data.confidence})}
-  if(NAME_SHIFT_HOW.test(prepI.how||"")&&pickName(cands).conf<NAME_RETRY_CONF) // no white border to line up on (sleeve, full-art): the name may sit a little lower
-    for(const dy of NAME_SHIFTS)for(const m of (pm&&pm.foil?["A","F"]:["A","B"])){const r=await withTimeout(w.recognize(nameBinary(cardHi,2,m,dy)),20000,"Reading the name");cands.push({name:cleanName(r.data.text),conf:r.data.confidence})}
+  const cands=await readNameCands(cardHi,pm&&pm.foil,prepI.how,w);
   const best=pickName(cands),readings=[best.fixedName,...cands.map(c=>c.name)];
   const ls=await maybeLostSoul(cardHi,card,readings,res.type,w,say);
   if(ls)return {matches:[{c:ls.card,d:ls.sure?0:0.4,s:0}],raw:best.fixedName,card};
